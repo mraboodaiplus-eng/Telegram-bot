@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from flask import Flask
+from threading import Thread
 import ccxt.async_support as ccxt
 import asyncio
 import os
@@ -264,6 +266,17 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         return STOP_LOSS_PERCENT
 
 # MAIN FUNCTION
+# FLASK WEB SERVER FOR HOSTING PLATFORM
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "I'm alive"
+
+def run_flask_app():
+    app.run(host='0.0.0.0', port=8080)
+
+# MAIN FUNCTION
 def main() -> None:
     # --- FIX 3: Check all required environment variables ---
     if not all([TELEGRAM_BOT_TOKEN, BINGX_API_KEY, BINGX_API_SECRET, ALLOWED_USER_ID]):
@@ -294,4 +307,9 @@ def main() -> None:
     application.run_polling(poll_interval=1.0) # Added poll_interval for better control
 
 if __name__ == "__main__":
+    # Start the Flask web server in a separate thread
+    flask_thread = Thread(target=run_flask_app)
+    flask_thread.start()
+    
+    # Start the Telegram bot main function
     main()
