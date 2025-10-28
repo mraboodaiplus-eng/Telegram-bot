@@ -8,6 +8,22 @@ import sys
 from telegram import Update, ForceReply
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
+# === WEB SERVER SETUP FOR RENDER.COM ===
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "I'm alive and running!"
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def start_web_server_thread():
+    web_thread = Thread(target=run_web_server)
+    web_thread.start()
+# ========================================
+
 # CONFIGURATION (Now using Environment Variables for Security)
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 BINGX_API_KEY = os.environ.get("BINGX_API_KEY")
@@ -266,17 +282,6 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         return STOP_LOSS_PERCENT
 
 # MAIN FUNCTION
-# FLASK WEB SERVER FOR HOSTING PLATFORM
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "I'm alive"
-
-def run_flask_app():
-    app.run(host='0.0.0.0', port=8080)
-
-# MAIN FUNCTION
 def main() -> None:
     # --- FIX 3: Check all required environment variables ---
     if not all([TELEGRAM_BOT_TOKEN, BINGX_API_KEY, BINGX_API_SECRET, ALLOWED_USER_ID]):
@@ -307,9 +312,8 @@ def main() -> None:
     application.run_polling(poll_interval=1.0) # Added poll_interval for better control
 
 if __name__ == "__main__":
-    # Start the Flask web server in a separate thread
-    flask_thread = Thread(target=run_flask_app)
-    flask_thread.start()
+    # 1. Start the web server in a background thread
+    start_web_server_thread()
     
-    # Start the Telegram bot main function
+    # 2. Start the main bot logic
     main()
