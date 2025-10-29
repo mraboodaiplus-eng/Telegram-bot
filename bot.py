@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-from flask import Flask
-from threading import Thread
+from flask import Flask, request, jsonify
 import ccxt.async_support as ccxt
 import asyncio
 import os
@@ -13,13 +12,16 @@ from telegram.ext import Application, CommandHandler, ContextTypes, Conversation
 # Assuming database.py is available and contains the required functions
 from database import init_db, get_user, add_new_user, update_subscription_status, is_subscription_active, setup_vip_api_keys
 
-# The Flask server logic is now handled internally by python-telegram-bot's run_webhook()
-# The original Flask server logic is no longer needed.
+# Flask app instance
+app = Flask(__name__)
+
+# Global variable to hold the Application instance
+application = None
 
 # --- CONFIGURATION AND CONSTANTS (Reverted to placeholders for secure delivery) ---
 # --- CONFIGURATION AND CONSTANTS (Updated with real values) ---
 # NOTE: The user must set TELEGRAM_BOT_TOKEN environment variable before running the bot
-TELEGRAM_BOT_TOKEN = "8282457564:AAEa4DvG9Vv0E1FE17G1xmL7qgV0FsRp2CY"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
 # Owner's Real Information (Hardcoded for simplicity as requested by user)
 OWNER_ID = 7281928709
@@ -574,14 +576,15 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
 # MAIN FUNCTION
 def main() -> None:
     # --- FIX 3: Check all required environment variables ---
-    # Only check for the token, as other values are hardcoded
+    # Check for the token
     if not TELEGRAM_BOT_TOKEN:
-        print("FATAL ERROR: TELEGRAM_BOT_TOKEN is not set.")
+        print("FATAL ERROR: TELEGRAM_BOT_TOKEN is not set in environment variables.")
         sys.exit(1)
         
     # --- NEW: Run DB initialization synchronously ---
     asyncio.run(init_db())
         
+    global application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
     # --- NEW: Subscription Conversation Handler ---
@@ -629,29 +632,39 @@ def main() -> None:
     application.add_handler(api_conv_handler)
     application.add_handler(trade_conv_handler)
     
-    # === NEW: Webhook Setup for Render ===
-    # Render provides the external hostname via an environment variable
-    # The default port is 8080
+    # === WEBHOOK SETUP VIA FLASK ===
     PORT = int(os.environ.get("PORT", 8080))
     RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
     
     if RENDER_EXTERNAL_HOSTNAME:
+        # 1. Set the webhook URL with Telegram API
         WEBHOOK_URL = f"https://{RENDER_EXTERNAL_HOSTNAME}/"
-        print(f"Starting Webhook on port {PORT} with URL: {WEBHOOK_URL}")
+        application.bot.set_webhook(url=WEBHOOK_URL)
+        print(f"Webhook set to: {WEBHOOK_URL}")
         
-        # We use run_webhook which handles the web server part internally
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path="/", # This is the path where Telegram will send updates
-            webhook_url=WEBHOOK_URL
-        )
+        # 2. Start the Flask server
+        print(f"Starting Flask server on port {PORT}...")
+        # We run Flask in the main thread now
+        app.run(host='0.0.0.0', port=PORT)
     else:
         # Fallback to polling for local testing
         print("RENDER_EXTERNAL_HOSTNAME not found. Falling back to Polling for local testing.")
         print("Bot is running... Send /start to the bot on Telegram.")
         application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
 
+@app.route('/', methods=['GET'])
+def home():
+    return "Telegram Bot is running (Webhook mode).", 200
+
+@app.route('/', methods=['POST'])
+async def telegram_webhook():
+    """Handle incoming Telegram updates."""
+    if request.method == "POST":
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        await application.process_update(update)
+    return jsonify({"status": "ok"}), 200
+
 if __name__ == "__main__":
     # Start the main bot logic
-    main()
+    # We use asyncio.run because we need to call set_webhook (an async function)
+    asyncio.run(main())
