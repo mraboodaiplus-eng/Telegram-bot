@@ -1,4 +1,4 @@
-'''# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import aiosqlite
 import os
 import datetime
@@ -94,4 +94,4 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(create_initial_db_file())
     print(f"Database file '{DATABASE_NAME}' created successfully.")
-'''
+
