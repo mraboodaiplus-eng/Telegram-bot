@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+'''# -*- coding: utf-8 -*-
 import aiosqlite
 import os
 import datetime
@@ -47,8 +47,13 @@ async def update_subscription_status(user_id, status, end_date=None):
         await db.commit()
 
 async def update_api_keys(user_id, api_key, api_secret):
-
-
+    """Updates a user's API keys."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE users SET api_key = ?, api_secret = ? WHERE user_id = ?",
+            (api_key, api_secret, user_id)
+        )
+        await db.commit()
 
 async def setup_vip_api_keys(user_id, api_key, api_secret):
     """Sets up API keys for a VIP user, only if they are not already set."""
@@ -62,8 +67,6 @@ async def setup_vip_api_keys(user_id, api_key, api_secret):
             (api_key, api_secret, user_id)
         )
         await db.commit()
-
-
 
 def is_subscription_active(user_record):
     """Checks if the user's subscription is currently active."""
@@ -91,3 +94,4 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(create_initial_db_file())
     print(f"Database file '{DATABASE_NAME}' created successfully.")
+'''
