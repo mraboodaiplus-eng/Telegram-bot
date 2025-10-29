@@ -574,7 +574,7 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         return STOP_LOSS_PERCENT
 
 # MAIN FUNCTION
-def main() -> Application:
+def main() -> None:
     # --- FIX 3: Check all required environment variables ---
     # Check for the token
     if not TELEGRAM_BOT_TOKEN:
@@ -632,39 +632,30 @@ def main() -> Application:
     application.add_handler(api_conv_handler)
     application.add_handler(trade_conv_handler)
     
-    # === WEBHOOK SETUP VIA FLASK ===
-    PORT = int(os.environ.get("PORT", 8080))
-    RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
-    
-    if RENDER_EXTERNAL_HOSTNAME:
-        # 1. Set the webhook URL with Telegram API
-        WEBHOOK_URL = f"https://{RENDER_EXTERNAL_HOSTNAME}/"
-        application.bot.set_webhook(url=WEBHOOK_URL)
-        print(f"Webhook set to: {WEBHOOK_URL}")
-        
-        # 2. End the main function, the Flask app is now ready to be served by Gunicorn.
-        print("Flask app configured for Gunicorn.")
-        # We must return to let Gunicorn take over the app execution.
-        return application
-    else: # Fallback to polling for local testing
-        print("RENDER_EXTERNAL_HOSTNAME not found. Falling back to Polling for local testing.")
-        print("Bot is running... Send /start to the bot on Telegram.")
-        application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
+    # === START KEEP-ALIVE WEB SERVER (Flask) ===
+    # We run the Flask server in a separate thread to keep the Polling bot alive and satisfy Render's port requirement.
+    import threading
+    def run_web_server():
+        # Render requires binding to 0.0.0.0 and using the port specified in the PORT environment variable.
+        PORT = int(os.environ.get("PORT", 8080))
+        # Use the development server since Gunicorn is not needed for Polling
+        app.run(host='0.0.0.0', port=PORT)
+
+    # Start the web server in a new thread
+    threading.Thread(target=run_web_server, daemon=True).start()
+
+    # === START POLLING BOT ===
+    print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
+    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
 
 @app.route('/', methods=['GET'])
 def home():
-    return "Telegram Bot is running (Webhook mode).", 200
+    # Changed message to reflect Polling mode
+    return "Telegram Bot is running (Polling mode with Keep-Alive).", 200
 
-@app.route('/', methods=['POST'])
-async def telegram_webhook():
-    """Handle incoming Telegram updates."""
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        await application.process_update(update)
-    return jsonify({"status": "ok"}), 200
+
 
 if __name__ == "__main__":
     # Start the main bot logic
-    # We use asyncio.run because we need to call set_webhook (an async function)
-    asyncio.run(main())
+    main()
 
