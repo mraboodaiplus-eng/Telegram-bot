@@ -2,3 +2,4 @@ ccxt
 python-telegram-bot
 Flask==3.0.3
 aiosqlite
+gunicorn

@@ -642,10 +642,10 @@ def main() -> None:
         application.bot.set_webhook(url=WEBHOOK_URL)
         print(f"Webhook set to: {WEBHOOK_URL}")
         
-        # 2. Start the Flask server
-        print(f"Starting Flask server on port {PORT}...")
-        # We run Flask in the main thread now
-        app.run(host='0.0.0.0', port=PORT)
+        # 2. End the main function, the Flask app is now ready to be served by Gunicorn.
+        print("Flask app configured for Gunicorn.")
+        # We must return to let Gunicorn take over the app execution.
+        return
     else:
         # Fallback to polling for local testing
         print("RENDER_EXTERNAL_HOSTNAME not found. Falling back to Polling for local testing.")
@@ -667,4 +667,8 @@ async def telegram_webhook():
 if __name__ == "__main__":
     # Start the main bot logic
     # We use asyncio.run because we need to call set_webhook (an async function)
+    asyncio.run(main())
+elif __name__ == 'gunicorn':
+    # This block is executed when Gunicorn loads the app
+    # We need to run the main function to initialize the application and handlers
     asyncio.run(main())
