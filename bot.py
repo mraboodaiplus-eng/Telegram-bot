@@ -13,26 +13,13 @@ from telegram.ext import Application, CommandHandler, ContextTypes, Conversation
 # Assuming database.py is available and contains the required functions
 from database import init_db, get_user, add_new_user, update_subscription_status, is_subscription_active, setup_vip_api_keys
 
-# === WEB SERVER SETUP FOR RENDER.COM (Kept for compatibility) ===
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "I'm alive and running!"
-
-def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def start_web_server_thread():
-    web_thread = Thread(target=run_web_server)
-    web_thread.start()
-# ========================================
+# The Flask server logic is now handled internally by python-telegram-bot's run_webhook()
+# The original Flask server logic is no longer needed.
 
 # --- CONFIGURATION AND CONSTANTS (Reverted to placeholders for secure delivery) ---
 # --- CONFIGURATION AND CONSTANTS (Updated with real values) ---
 # NOTE: The user must set TELEGRAM_BOT_TOKEN environment variable before running the bot
-TELEGRAM_BOT_TOKEN = "8282457564:AAE0hzkFVdLrhU3426iJDUr0JMG5DkloEFE"
+TELEGRAM_BOT_TOKEN = "8282457564:AAEa4DvG9Vv0E1FE17G1xmL7qgV0FsRp2CY"
 
 # Owner's Real Information (Hardcoded for simplicity as requested by user)
 OWNER_ID = 7281928709
@@ -642,12 +629,29 @@ def main() -> None:
     application.add_handler(api_conv_handler)
     application.add_handler(trade_conv_handler)
     
-    print("Bot is running... Send /start to the bot on Telegram.")
-    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
+    # === NEW: Webhook Setup for Render ===
+    # Render provides the external hostname via an environment variable
+    # The default port is 8080
+    PORT = int(os.environ.get("PORT", 8080))
+    RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+    
+    if RENDER_EXTERNAL_HOSTNAME:
+        WEBHOOK_URL = f"https://{RENDER_EXTERNAL_HOSTNAME}/"
+        print(f"Starting Webhook on port {PORT} with URL: {WEBHOOK_URL}")
+        
+        # We use run_webhook which handles the web server part internally
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path="/", # This is the path where Telegram will send updates
+            webhook_url=WEBHOOK_URL
+        )
+    else:
+        # Fallback to polling for local testing
+        print("RENDER_EXTERNAL_HOSTNAME not found. Falling back to Polling for local testing.")
+        print("Bot is running... Send /start to the bot on Telegram.")
+        application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    # 1. Start the web server in a background thread
-    start_web_server_thread()
-    
-    # 2. Start the main bot logic
+    # Start the main bot logic
     main()
