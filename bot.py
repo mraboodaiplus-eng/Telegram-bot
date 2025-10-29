@@ -266,15 +266,42 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         
     # 1. Check Whitelist
     if user_id in WHITELISTED_USERS:
-        await update.message.reply_text(
-            f"👋 مرحباً بك يا {username} (المستخدم المميز)!\n\n"
-            "**الأوامر المتاحة:**\n"
-            "/trade - 📈 تداول عادي (شراء وبيع)\n"
-            "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-            "/cancel - ❌ إلغاء العملية الحالية\n"
-            "/set_api - 🔑 إعداد مفاتيح API\n"
-            "/status - ℹ️ عرض حالة الاشتراك"
-        )
+        # Custom Welcome Logic
+        if user_id == OWNER_ID:
+            welcome_message = (
+                f"👑 أهلاً بك يا سيدي المدير العام ({username})! 👑\n\n"
+                "البوت تحت إمرتك. جميع الصلاحيات مفعلة.\n"
+                "**الأوامر المتاحة:**\n"
+                "/trade - 📈 تداول عادي (شراء وبيع)\n"
+                "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+                "/cancel - ❌ إلغاء العملية الحالية\n"
+                "/set_api - 🔑 إعداد مفاتيح API\n"
+                "/status - ℹ️ عرض حالة البوت"
+            )
+        elif user_id == ABOOD_ID:
+            welcome_message = (
+                f"👋 مرحباً بك يا Abood ({username})! 👋\n\n"
+                "أنت ضمن القائمة البيضاء، جميع الصلاحيات مفعلة.\n"
+                "**الأوامر المتاحة:**\n"
+                "/trade - 📈 تداول عادي (شراء وبيع)\n"
+                "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+                "/cancel - ❌ إلغاء العملية الحالية\n"
+                "/set_api - 🔑 إعداد مفاتيح API\n"
+                "/status - ℹ️ عرض حالة البوت"
+            )
+        else:
+            # Fallback for any other whitelisted user if the list is expanded
+            welcome_message = (
+                f"👋 مرحباً بك يا {username} (المستخدم المميز)!\n\n"
+                "**الأوامر المتاحة:**\n"
+                "/trade - 📈 تداول عادي (شراء وبيع)\n"
+                "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+                "/cancel - ❌ إلغاء العملية الحالية\n"
+                "/set_api - 🔑 إعداد مفاتيح API\n"
+                "/status - ℹ️ عرض حالة الاشتراك"
+            )
+        
+        await update.message.reply_text(welcome_message)
         return
         
     # 2. Check Subscription Status for Clients
@@ -330,16 +357,22 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                     f"مفاتيح API: **{'موجودة' if user_record['api_key'] else 'غير موجودة'}**")
 
 async def trade_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # Check subscription before starting conversation
     if not await check_subscription(update, context):
         return ConversationHandler.END
+
+
         
     context.user_data['is_sniping'] = False
     await update.message.reply_text("1. 💰 أدخل مبلغ الشراء بالدولار الأمريكي (USDT):", reply_markup=ForceReply(selective=True))
     return AMOUNT
 
 async def sniping_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    # Check subscription before starting conversation
     if not await check_subscription(update, context):
         return ConversationHandler.END
+
+
         
     context.user_data['is_sniping'] = True
     await update.message.reply_text("1. ⚡️ أدخل مبلغ القنص بالدولار الأمريكي (USDT):", reply_markup=ForceReply(selective=True))
@@ -347,8 +380,7 @@ async def sniping_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 # --- NEW: API Key Setting Conversation ---
 async def set_api_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not await check_subscription(update, context):
-        return ConversationHandler.END
+
         
     await update.message.reply_text("🔑 **إعداد مفاتيح API**\n\n"
                                     "1. يرجى إرسال **API Key** الخاص بك:", reply_markup=ForceReply(selective=True))
@@ -479,10 +511,12 @@ async def approve_subscription_callback(update: Update, context: ContextTypes.DE
 
 # --- Original Handlers (Kept) ---
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("❌ Operation cancelled.")
+    """Cancels and ends the conversation."""
+    await update.message.reply_text('❌ تم إلغاء العملية.', reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 async def simple_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A simple cancel command that does not end a conversation (used for general command handling)."""
     await update.message.reply_text("❌ Operation cancelled.")
 
 async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
