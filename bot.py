@@ -574,7 +574,7 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         return STOP_LOSS_PERCENT
 
 # MAIN FUNCTION
-def main() -> None:
+def main() -> Application:
     # --- FIX 3: Check all required environment variables ---
     # Check for the token
     if not TELEGRAM_BOT_TOKEN:
@@ -645,9 +645,8 @@ def main() -> None:
         # 2. End the main function, the Flask app is now ready to be served by Gunicorn.
         print("Flask app configured for Gunicorn.")
         # We must return to let Gunicorn take over the app execution.
-        return
-    else:
-        # Fallback to polling for local testing
+        return application
+    else: # Fallback to polling for local testing
         print("RENDER_EXTERNAL_HOSTNAME not found. Falling back to Polling for local testing.")
         print("Bot is running... Send /start to the bot on Telegram.")
         application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
@@ -668,7 +667,4 @@ if __name__ == "__main__":
     # Start the main bot logic
     # We use asyncio.run because we need to call set_webhook (an async function)
     asyncio.run(main())
-elif __name__ == 'gunicorn':
-    # This block is executed when Gunicorn loads the app
-    # We need to run the main function to initialize the application and handlers
-    asyncio.run(main())
+
