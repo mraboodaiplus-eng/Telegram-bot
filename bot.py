@@ -385,6 +385,8 @@ async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     api_key = context.user_data['temp_api_key']
     user_id = update.effective_user.id
     
+    # Ensure user exists in DB before attempting to update keys
+    await add_new_user(user_id) 
     await update_api_keys(user_id, api_key, api_secret)
     
     await update.message.reply_text("✅ **تم حفظ مفاتيح API بنجاح!**\n"
