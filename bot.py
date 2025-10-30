@@ -2,6 +2,7 @@
 from flask import Flask, request, jsonify
 import ccxt.async_support as ccxt
 import asyncio
+import nest_asyncio
 import os
 import sys
 import datetime
@@ -588,7 +589,6 @@ def main() -> None:
     try:
         asyncio.run(init_db())
     except RuntimeError:
-        import nest_asyncio
         nest_asyncio.apply()
         asyncio.run(init_db())
         
