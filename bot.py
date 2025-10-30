@@ -439,7 +439,13 @@ def main() -> None:
         sys.exit(1)
 
     # Initialize Database
-    asyncio.run(init_db())
+    try:
+        asyncio.run(init_db())
+    except RuntimeError:
+        # This handles the case where an event loop is already running (common in Render/Flask environments)
+        import nest_asyncio
+        nest_asyncio.apply()
+        asyncio.run(init_db())
 
     # Create the Application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
