@@ -2,7 +2,6 @@
 from flask import Flask, request, jsonify
 import ccxt.async_support as ccxt
 import asyncio
-import nest_asyncio
 import os
 import sys
 import datetime
@@ -52,8 +51,6 @@ ALLOWED_USER_ID = str(OWNER_ID) # Kept for compatibility with old code logic if 
 AMOUNT, SYMBOL, PROFIT_PERCENT, USE_STOP_LOSS, STOP_LOSS_PERCENT = range(5)
 # NEW Conversation States for Subscription
 WAITING_FOR_SCREENSHOT = 50
-API_KEY_STATE = 60
-API_SECRET_STATE = 70
 
 # BINGX TRADING LOGIC
 def initialize_exchange(user_id, api_key, api_secret):
@@ -76,7 +73,7 @@ def initialize_exchange(user_id, api_key, api_secret):
 
 async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, exchange, symbol):
     await update.message.reply_text(f"⏳ [SNIPING MODE] جاري انتظار إدراج العملة {symbol}...")
-    SNIPING_DELAY = 0.03
+    SNIPING_DELAY = 0.03 # تم التحديث بناءً على طلب المستخدم
     while True:
         try:
             ticker = await exchange.fetch_ticker(symbol)
@@ -84,7 +81,7 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
                 await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed! Current price: {ticker['last']}")
                 return
         except ccxt.BadSymbol:
-            await asyncio.sleep(0.03) # 30ms delay to balance speed and safety
+            await asyncio.sleep(SNIPING_DELAY)
         except Exception as e:
             await update.message.reply_text(f"⚠️ [WARNING] Sniping Error: {type(e).__name__}: {e}")
             await asyncio.sleep(5)
@@ -261,28 +258,27 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Custom Welcome Logic
         if user_id == OWNER_ID:
             welcome_message = (
-                f"👑 **أهلاً بك يا سيدي المدير العام ({username})!** 👑\n\n"
-                "إمبراطورية التداول الرقمي تحت إمرتك. كل الصلاحيات مفعلة وجاهزة لتنفيذ أوامرك السامية.\n\n"
-                "**الأوامر الملكية:**\n"
+                f"👑 **تحية الإجلال، سيدي المدير العام** ({username}) 👑\n\n"
+                "جميع الأنظمة والعمليات تحت إمرتكم المباشرة. الصلاحيات العليا مفعلة بالكامل.\n"
+                "**الأوامر السيادية المتاحة:**\n"
                 "/trade - 📈 تداول عادي (شراء وبيع)\n"
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة البوت\n\n"
-                "**أوامر الإدارة العليا:**\n"
-                "/approve [user_id] - ✅ تفعيل اشتراك مستخدم"
+                "/status - ℹ️ عرض حالة البوت"
             )
-    elif user_id == ABOOD_ID:
-        welcome_message = (
-            f"👋 **أهلاً بك يا {username} (المستخدم المميز)!** 👋\n\n"
-            "أنت ضمن القائمة البيضاء، جميع صلاحيات التداول والقنص مفعلة لك بشكل دائم.\n\n"
-            "**الأوامر المتاحة:**\n"
-            "/trade - 📈 تداول عادي (شراء وبيع)\n"
-            "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-            "/cancel - ❌ إلغاء العملية الحالية\n"
-            "/set_api - 🔑 إعداد مفاتيح API\n"
-            "/status - ℹ️ عرض حالة البوت"
-        )     else:
+        elif user_id == ABOOD_ID:
+            welcome_message = (
+                f"👋 **أهلاً بك يا عبود، الذراع الأيمن** ({username}) 👋\n\n"
+                "أنت ضمن الدائرة الذهبية، جميع الصلاحيات التشغيلية مفعلة.\n"
+                "**الأوامر التنفيذية المتاحة:**\n"
+                "/trade - 📈 تداول عادي (شراء وبيع)\n"
+                "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+                "/cancel - ❌ إلغاء العملية الحالية\n"
+                "/set_api - 🔑 إعداد مفاتيح API\n"
+                "/status - ℹ️ عرض حالة البوت"
+            )
+        else:
             # Fallback for any other whitelisted user if the list is expanded
             welcome_message = (
                 f"👋 مرحباً بك يا {username} (المستخدم المميز)!\n\n"
@@ -377,12 +373,12 @@ async def set_api_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         
     await update.message.reply_text("🔑 **إعداد مفاتيح API**\n\n"
                                     "1. يرجى إرسال **API Key** الخاص بك:", reply_markup=ForceReply(selective=True))
-    return API_KEY_STATE # State for API Key
+    return 1 # State for API Key
 
 async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['temp_api_key'] = update.message.text.strip()
     await update.message.reply_text("2. يرجى إرسال **API Secret** الخاص بك:", reply_markup=ForceReply(selective=True))
-    return API_SECRET_STATE # State for API Secret
+    return 2 # State for API Secret
 
 async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     api_secret = update.message.text.strip()
@@ -585,12 +581,8 @@ def main() -> None:
         print("FATAL ERROR: TELEGRAM_BOT_TOKEN is not set in environment variables.")
         sys.exit(1)
         
-    # FIX: Run DB initialization asynchronously, using nest_asyncio for compatibility with Render's environment
-    try:
-        asyncio.run(init_db())
-    except RuntimeError:
-        nest_asyncio.apply()
-        asyncio.run(init_db())
+    # --- NEW: Run DB initialization synchronously ---
+    asyncio.run(init_db())
         
     global application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -605,15 +597,14 @@ def main() -> None:
         allow_reentry=True
     )
     
-    # --- NEW: API Key Conversation Handler ---
-    api_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("set_api", set_api_start)],
-        states={
-            API_KEY_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_key)],
-            API_SECRET_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_secret)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel_command)],
-        allow_reentry=True
+    # --- NEW: API Key Conversation Handler ---        ConversationHandler(
+            entry_points=[CommandHandler("set_api", set_api_start)],
+            states={
+                1: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_key)],
+                2: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_secret)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+        )allow_reentry=True
     )
     
     # Conversation Handler Setup (Trade/Sniping)
