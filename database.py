@@ -14,8 +14,8 @@ async def init_db():
                 user_type TEXT DEFAULT 'client',
                 api_key TEXT NULL,
                 api_secret TEXT NULL,
-                is_frozen INTEGER DEFAULT 0,
-                debt_amount REAL DEFAULT 0.0
+                subscription_status TEXT DEFAULT 'inactive',
+                subscription_end_date DATETIME NULL
             );
         """)
 
@@ -36,17 +36,17 @@ async def add_new_user(user_id, user_type='client'):
         )
         await db.commit()
 
-async def update_subscription_status(user_id, is_frozen=None, debt_amount=None):
-    """Updates a user's frozen status and debt amount."""
+async def update_subscription_status(user_id, status=None, end_date=None):
+    """Updates a user's subscription status and end date."""
     updates = []
     params = []
     
-    if is_frozen is not None:
-        updates.append("is_frozen = ?")
-        params.append(is_frozen)
-    if debt_amount is not None:
-        updates.append("debt_amount = ?")
-        params.append(debt_amount)
+    if status is not None:
+        updates.append("subscription_status = ?")
+        params.append(status)
+    if end_date is not None:
+        updates.append("subscription_end_date = ?")
+        params.append(end_date)
         
     if not updates:
         return # Nothing to update
@@ -73,23 +73,37 @@ async def update_api_keys(user_id, api_key, api_secret):
 async def setup_vip_api_keys(user_id, api_key, api_secret):
     """Sets up API keys for a VIP user, only if they are not already set."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
+        # Ensure user exists and is marked as VIP
         await db.execute(
-            "INSERT OR IGNORE INTO users (user_id, api_key, api_secret) VALUES (?, ?, ?)",
-            (user_id, api_key, api_secret)
+            "INSERT OR IGNORE INTO users (user_id, user_type, subscription_status) VALUES (?, ?, ?)",
+            (user_id, 'vip', 'active')
         )
+        # Update keys only if not set
         await db.execute(
-            "UPDATE users SET api_key = ?, api_secret = ? WHERE user_id = ? AND api_key IS NULL",
+            "UPDATE users SET api_key = ?, api_secret = ?, user_type = 'vip', subscription_status = 'active' WHERE user_id = ? AND api_key IS NULL",
             (api_key, api_secret, user_id)
         )
         await db.commit()
 
 def is_subscription_active(user_record):
-    """Checks if the user is allowed to trade (not frozen)."""
+    """Checks if the user has an active subscription."""
     if not user_record:
         return False
+        
+    if user_record['user_type'] == 'vip':
+        return True # VIP users are always active
+        
+    status = user_record['subscription_status']
+    end_date_str = user_record['subscription_end_date']
     
-    # A user is active if they are not frozen.
-    return user_record['is_frozen'] == 0
+    if status == 'active' and end_date_str:
+        try:
+            end_date = datetime.datetime.strptime(end_date_str, "%Y-%m-%d")
+            return end_date >= datetime.datetime.now()
+        except ValueError:
+            return False
+            
+    return False
 
 # Initialize the database file
 async def create_initial_db_file():
