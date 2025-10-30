@@ -14,7 +14,10 @@ async def init_db():
                 user_type TEXT DEFAULT 'client',
                 api_key TEXT NULL,
                 api_secret TEXT NULL,
-                subscription_status TEXT DEFAULT 'inactive',
+                is_frozen INTEGER DEFAULT 0,
+                debt_amount REAL DEFAULT 0.0,
+                # subscription_status and subscription_end_date are kept for compatibility but will be unused
+                subscription_status TEXT DEFAULT 'commission',
                 subscription_end_date DATETIME NULL
             )
         """)
@@ -24,6 +27,7 @@ async def get_user(user_id):
     """Fetches a user's record from the database."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
         db.row_factory = aiosqlite.Row
+        # Select all columns, including the new ones (is_frozen, debt_amount)
         cursor = await db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         user = await cursor.fetchone()
         return user
@@ -38,7 +42,7 @@ async def add_new_user(user_id, user_type='client'):
         await db.commit()
 
 async def update_subscription_status(user_id, status, end_date=None):
-    """Updates a user's subscription status and end date."""
+    """Updates a user's subscription status and end date (Kept for compatibility)."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
         await db.execute(
             "UPDATE users SET subscription_status = ?, subscription_end_date = ? WHERE user_id = ?",
@@ -69,19 +73,33 @@ async def setup_vip_api_keys(user_id, api_key, api_secret):
         await db.commit()
 
 def is_subscription_active(user_record):
-    """Checks if the user's subscription is currently active."""
+    """Checks if the user is allowed to trade (not frozen)."""
     if not user_record:
         return False
     
-    if user_record['subscription_status'] == 'active':
-        end_date_str = user_record['subscription_end_date']
-        if end_date_str:
-            # Convert string to datetime object
-            end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
-            # Check if the end date is in the future
-            return end_date > datetime.datetime.now()
-    
-    return False
+    # Under the new commission model, a user is active if they are not frozen.
+    # The 'is_frozen' column will be 0 (False) for active users.
+    return user_record['is_frozen'] == 0
+
+# --- NEW DEBT MANAGEMENT FUNCTIONS ---
+
+async def update_debt(user_id, amount_to_add):
+    """Adds or subtracts from the user's debt amount."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE users SET debt_amount = debt_amount + ? WHERE user_id = ?",
+            (amount_to_add, user_id)
+        )
+        await db.commit()
+
+async def set_frozen_status(user_id, is_frozen_status):
+    """Sets the user's frozen status (1 for frozen, 0 for unfrozen)."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE users SET is_frozen = ? WHERE user_id = ?",
+            (is_frozen_status, user_id)
+        )
+        await db.commit()
 
 # Initialize the database file
 async def create_initial_db_file():

@@ -73,18 +73,45 @@ def initialize_exchange(user_id, api_key, api_secret):
 
 async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, exchange, symbol):
     await update.message.reply_text(f"⏳ [SNIPING MODE] جاري انتظار إدراج العملة {symbol}...")
-    SNIPING_DELAY = 0.03
+    
+    # 1. Faster Polling (0.01 second)
+    SNIPING_DELAY = 0.01 
+    
+    # 2. Use fetch_ticker for speed, but load markets periodically to ensure symbol is truly tradeable
+    attempts = 0
+    MAX_ATTEMPTS_BEFORE_RELOAD = 100 
+    
     while True:
+        attempts += 1
         try:
+            # Attempt 1: Fast check using fetch_ticker
             ticker = await exchange.fetch_ticker(symbol)
-            if ticker:
-                await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed! Current price: {ticker['last']}")
-                return
+            
+            if ticker and ticker.get('last') is not None:
+                # Attempt 2: Confirm listing by loading markets (more reliable check)
+                if attempts % MAX_ATTEMPTS_BEFORE_RELOAD == 0:
+                    await exchange.load_markets(reload=True)
+                    if symbol in exchange.markets:
+                        await update.message.reply_text(f"✅ [SUCCESS] {symbol} متاح للتداول! السعر الحالي: {ticker['last']}")
+                        return
+                    else:
+                        # Should not happen, but a safeguard
+                        await update.message.reply_text(f"⚠️ [WARNING] {symbol} ظهر في التيكر لكنه غير متاح في الأسواق. جاري الانتظار...")
+                        
+                else:
+                    # Assume available if ticker is found and market reload is not due
+                    await update.message.reply_text(f"✅ [SUCCESS] {symbol} متاح للتداول! السعر الحالي: {ticker['last']}")
+                    return
+                    
         except ccxt.BadSymbol:
-            await asyncio.sleep(SNIPING_DELAY)
+            # Expected error when symbol is not listed yet
+            pass
         except Exception as e:
+            # Log other errors but continue sniping
             await update.message.reply_text(f"⚠️ [WARNING] Sniping Error: {type(e).__name__}: {e}")
-            await asyncio.sleep(5)
+            await asyncio.sleep(1) # Longer sleep on unexpected error
+            
+        await asyncio.sleep(SNIPING_DELAY)
 
 async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, params):
     user_id = update.effective_user.id
@@ -92,6 +119,15 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     
     if not user_record or not user_record['api_key'] or not user_record['api_secret']:
         await update.message.reply_text("🚨 [ERROR] لم يتم العثور على مفاتيح API الخاصة بك. يرجى إدخالها أولاً.")
+        return
+
+    # Check for Smart Freeze (Debt System)
+    if user_record.get('is_frozen', 0) == 1:
+        await update.message.reply_text(
+            f"❌ **حسابك مجمد مؤقتاً.**\n\n"
+            f"لديك دين مستحق بقيمة **{user_record.get('debt_amount', 0.0):.2f} USDT**.\n"
+            f"يرجى دفع العمولة المستحقة لإلغاء تجميد الحساب واستئناف التداول."
+        )
         return
 
     try:
@@ -321,6 +357,107 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             reply_markup=reply_markup
         )
 
+# --- ADMIN COMMANDS ---
+async def freeze_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command to freeze a user's account."""
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("❌ هذا الأمر مخصص للمدير فقط.")
+        return
+    
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("❌ الاستخدام: /freeze [user_id]")
+        return
+    
+    target_id = int(context.args[0])
+    await set_frozen_status(target_id, 1)
+    await update.message.reply_text(f"❄️ تم تجميد حساب المستخدم {target_id} بنجاح.")
+
+async def unfreeze_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command to unfreeze a user's account."""
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("❌ هذا الأمر مخصص للمدير فقط.")
+        return
+        
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("❌ الاستخدام: /unfreeze [user_id]")
+        return
+    
+    target_id = int(context.args[0])
+    await set_frozen_status(target_id, 0)
+    await update.message.reply_text(f"✅ تم إلغاء تجميد حساب المستخدم {target_id} بنجاح.")
+
+async def add_debt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin command to add debt to a user's account."""
+    if update.effective_user.id != OWNER_ID:
+        await update.message.reply_text("❌ هذا الأمر مخصص للمدير فقط.")
+        return
+        
+    if len(context.args) < 2 or not context.args[0].isdigit() or not is_float(context.args[1]):
+        await update.message.reply_text("❌ الاستخدام: /add_debt [user_id] [amount]")
+        return
+    
+    target_id = int(context.args[0])
+    amount = float(context.args[1])
+    await update_debt(target_id, amount)
+    
+    user_record = await get_user(target_id)
+    await update.message.reply_text(f"💸 تم إضافة {amount:.2f} USDT كدين للمستخدم {target_id}.\nالدين المستحق الجديد: {user_record['debt_amount']:.2f} USDT.")
+
+async def pay_debt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the conversation for paying off debt."""
+    # This will be a simple manual payment request for now.
+    user_record = await get_user(update.effective_user.id)
+    
+    if not user_record or user_record['debt_amount'] <= 0:
+        await update.message.reply_text("✅ لا يوجد لديك دين مستحق حالياً.")
+        return
+        
+    await update.message.reply_text(
+        f"💰 **دفع العمولة المستحقة**\n\n"
+        f"دينك المستحق هو: **{user_record['debt_amount']:.2f} USDT**.\n"
+        f"يرجى إرسال المبلغ المطلوب إلى عنوان USDT (BEP20) التالي: `{USDT_ADDRESS}`\n\n"
+        "**بعد الدفع، يرجى إرسال سكرين شوت (لقطة شاشة) لعملية التحويل لإلغاء تجميد حسابك.**"
+    )
+    return WAITING_FOR_SCREENSHOT
+
+async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the screenshot sent by the user for debt payment."""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or update.effective_user.first_name
+    
+    if not update.message.photo:
+        await update.message.reply_text("❌ لم يتم إرسال صورة. يرجى إرسال لقطة شاشة (سكرين شوت) لعملية الدفع.")
+        return WAITING_FOR_SCREENSHOT
+        
+    # 1. Send the screenshot to the admin
+    photo_file_id = update.message.photo[-1].file_id
+    caption = (
+        f"🚨 **طلب سداد عمولة (Manual Review)** 🚨\n"
+        f"المستخدم: @{username} (ID: `{user_id}`)\n"
+        f"الرجاء التحقق من السداد وإلغاء تجميد الحساب يدوياً.\n"
+        f"الأوامر الإدارية: /unfreeze {user_id} و /add_debt {user_id} -[amount]"
+    )
+    
+    await context.bot.send_photo(
+        chat_id=ADMIN_CHAT_ID,
+        photo=photo_file_id,
+        caption=caption
+    )
+    
+    # 2. Inform the user and freeze for 24 hours (Manual Review Period)
+    await update.message.reply_text(
+        "✅ **تم استلام لقطة الشاشة بنجاح.**\n\n"
+        "جاري الآن مراجعة عملية الدفع يدوياً من قبل المدير.\n"
+        "سيتم إلغاء تجميد حسابك بعد التحقق من السداد.\n"
+        "**شكراً لك على سداد العمولة!**"
+    )
+    
+    # 3. Freeze the account (Smart Freeze already handled in execute_trade)
+    # We will just end the conversation. The admin will manually unfreeze.
+    
+    return ConversationHandler.END
+
+# --- GENERAL COMMANDS ---
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     user_record = await get_user(user_id)
@@ -392,7 +529,13 @@ async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     return ConversationHandler.END
 
-# --- NEW: Subscription Handlers ---
+# ---    # Admin Handlers
+    application.add_handler(CommandHandler("freeze", freeze_user_command))
+    application.add_handler(CommandHandler("unfreeze", unfreeze_user_command))
+    application.add_handler(CommandHandler("add_debt", add_debt_command))
+    application.add_handler(CommandHandler("pay_debt", pay_debt_command))
+    
+    # Subscription Handlers ---
 
 async def subscribe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -409,6 +552,43 @@ async def subscribe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
         )
         return WAITING_FOR_SCREENSHOT
+
+async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the screenshot sent by the user for debt payment."""
+    user_id = update.effective_user.id
+    username = update.effective_user.username or update.effective_user.first_name
+    
+    if not update.message.photo:
+        await update.message.reply_text("❌ لم يتم إرسال صورة. يرجى إرسال لقطة شاشة (سكرين شوت) لعملية الدفع.")
+        return WAITING_FOR_SCREENSHOT
+        
+    # 1. Send the screenshot to the admin
+    photo_file_id = update.message.photo[-1].file_id
+    caption = (
+        f"🚨 **طلب سداد عمولة (Manual Review)** 🚨\n"
+        f"المستخدم: @{username} (ID: `{user_id}`)\n"
+        f"الرجاء التحقق من السداد وإلغاء تجميد الحساب يدوياً.\n"
+        f"الأوامر الإدارية: /unfreeze {user_id} و /add_debt {user_id} -[amount]"
+    )
+    
+    await context.bot.send_photo(
+        chat_id=ADMIN_CHAT_ID,
+        photo=photo_file_id,
+        caption=caption
+    )
+    
+    # 2. Inform the user and freeze for 24 hours (Manual Review Period)
+    await update.message.reply_text(
+        "✅ **تم استلام لقطة الشاشة بنجاح.**\n\n"
+        "جاري الآن مراجعة عملية الدفع يدوياً من قبل المدير.\n"
+        "سيتم إلغاء تجميد حسابك بعد التحقق من السداد.\n"
+        "**شكراً لك على سداد العمولة!**"
+    )
+    
+    # 3. Freeze the account (Smart Freeze already handled in execute_trade)
+    # We will just end the conversation. The admin will manually unfreeze.
+    
+    return ConversationHandler.END
         
     return ConversationHandler.END
 
@@ -597,19 +777,26 @@ def main() -> None:
         allow_reentry=True
     )
     
-    # --- NEW: API Key Conversation Handler ---
+    # --- NEW: API Key Conversation Hand    # Conversation Handler for Debt Payment Screenshot
+    debt_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("pay_debt", pay_debt_command)],
+        states={
+            WAITING_FOR_SCREENSHOT: [MessageHandler(filters.PHOTO, handle_screenshot)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+    )
+    application.add_handler(debt_conv_handler)
+    
+    # Conversation Handler for API Key Setup
     api_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("set_api", set_api_start)],
         states={
-            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_key)],
-            2: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_secret)],
+            API_KEY_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_key, pass_user_data=True)],
+            API_SECRET_STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_secret, pass_user_data=True)],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)],
-        allow_reentry=True
     )
-    
-    # Conversation Handler Setup (Trade/Sniping)
-    trade_conv_handler = ConversationHandler(
+    application.add_handler(api_conv_handler)ConversationHandler(
         entry_points=[CommandHandler("trade", trade_start), CommandHandler("sniping", sniping_start)],
         states={
             AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount)],
