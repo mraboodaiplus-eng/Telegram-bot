@@ -41,12 +41,34 @@ async def add_new_user(user_id, user_type='client'):
         )
         await db.commit()
 
-async def update_subscription_status(user_id, status, end_date=None):
-    """Updates a user's subscription status and end date (Kept for compatibility)."""
+async def update_subscription_status(user_id, status=None, end_date=None, is_frozen=None, debt_amount=None):
+    """Updates a user's subscription status, end date, frozen status, and debt amount."""
+    updates = []
+    params = []
+    
+    if status is not None:
+        updates.append("subscription_status = ?")
+        params.append(status)
+    if end_date is not None:
+        updates.append("subscription_end_date = ?")
+        params.append(end_date)
+    if is_frozen is not None:
+        updates.append("is_frozen = ?")
+        params.append(is_frozen)
+    if debt_amount is not None:
+        updates.append("debt_amount = ?")
+        params.append(debt_amount)
+        
+    if not updates:
+        return # Nothing to update
+
+    set_clause = ", ".join(updates)
+    params.append(user_id)
+    
     async with aiosqlite.connect(DATABASE_NAME) as db:
         await db.execute(
-            "UPDATE users SET subscription_status = ?, subscription_end_date = ? WHERE user_id = ?",
-            (status, end_date, user_id)
+            f"UPDATE users SET {set_clause} WHERE user_id = ?",
+            tuple(params)
         )
         await db.commit()
 
@@ -80,26 +102,6 @@ def is_subscription_active(user_record):
     # Under the new commission model, a user is active if they are not frozen.
     # The 'is_frozen' column will be 0 (False) for active users.
     return user_record['is_frozen'] == 0
-
-# --- NEW DEBT MANAGEMENT FUNCTIONS ---
-
-async def update_debt(user_id, amount_to_add):
-    """Adds or subtracts from the user's debt amount."""
-    async with aiosqlite.connect(DATABASE_NAME) as db:
-        await db.execute(
-            "UPDATE users SET debt_amount = debt_amount + ? WHERE user_id = ?",
-            (amount_to_add, user_id)
-        )
-        await db.commit()
-
-async def set_frozen_status(user_id, is_frozen_status):
-    """Sets the user's frozen status (1 for frozen, 0 for unfrozen)."""
-    async with aiosqlite.connect(DATABASE_NAME) as db:
-        await db.execute(
-            "UPDATE users SET is_frozen = ? WHERE user_id = ?",
-            (is_frozen_status, user_id)
-        )
-        await db.commit()
 
 # Initialize the database file
 async def create_initial_db_file():

@@ -51,6 +51,12 @@ ALLOWED_USER_ID = str(OWNER_ID) # Kept for compatibility with old code logic if 
 AMOUNT, SYMBOL, PROFIT_PERCENT, USE_STOP_LOSS, STOP_LOSS_PERCENT = range(5)
 # NEW Conversation States for Subscription
 WAITING_FOR_SCREENSHOT = 50
+# NEW Conversation State for Debt Payment
+WAITING_FOR_DEBT_SCREENSHOT = 51
+# Conversation States for API Key Setup
+API_KEY_STATE = 60
+API_SECRET_STATE = 61
+
 
 # BINGX TRADING LOGIC
 def initialize_exchange(user_id, api_key, api_secret):
@@ -301,7 +307,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة البوت"
+                "/status - ℹ️ عرض حالة البوت\n"
+                "**أوامر الإدارة:**\n"
+                "/freeze [user_id] - 🥶 تجميد حساب المستخدم\n"
+                "/unfreeze [user_id] - ✅ إلغاء تجميد حساب المستخدم\n"
+                "/add_debt [user_id] [amount] - 💰 إضافة دين للمستخدم"
             )
         elif user_id == ABOOD_ID:
             welcome_message = (
@@ -369,65 +379,79 @@ async def freeze_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     target_id = int(context.args[0])
-    await set_frozen_status(target_id, 1)
-    await update.message.reply_text(f"❄️ تم تجميد حساب المستخدم {target_id} بنجاح.")
+    await update_subscription_status(target_id, is_frozen=1)
+    await update.message.reply_text(f"🥶 **تم تجميد حساب المستخدم** `{target_id}` بنجاح.")
 
 async def unfreeze_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin command to unfreeze a user's account."""
     if update.effective_user.id != OWNER_ID:
         await update.message.reply_text("❌ هذا الأمر مخصص للمدير فقط.")
         return
-        
+    
     if not context.args or not context.args[0].isdigit():
         await update.message.reply_text("❌ الاستخدام: /unfreeze [user_id]")
         return
     
     target_id = int(context.args[0])
-    await set_frozen_status(target_id, 0)
-    await update.message.reply_text(f"✅ تم إلغاء تجميد حساب المستخدم {target_id} بنجاح.")
+    await update_subscription_status(target_id, is_frozen=0)
+    await update.message.reply_text(f"✅ **تم إلغاء تجميد حساب المستخدم** `{target_id}` بنجاح.")
 
 async def add_debt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Admin command to add debt to a user's account."""
     if update.effective_user.id != OWNER_ID:
         await update.message.reply_text("❌ هذا الأمر مخصص للمدير فقط.")
         return
-        
-    if len(context.args) < 2 or not context.args[0].isdigit() or not is_float(context.args[1]):
+    
+    if len(context.args) != 2 or not context.args[0].isdigit():
         await update.message.reply_text("❌ الاستخدام: /add_debt [user_id] [amount]")
         return
     
-    target_id = int(context.args[0])
-    amount = float(context.args[1])
-    await update_debt(target_id, amount)
-    
-    user_record = await get_user(target_id)
-    await update.message.reply_text(f"💸 تم إضافة {amount:.2f} USDT كدين للمستخدم {target_id}.\nالدين المستحق الجديد: {user_record['debt_amount']:.2f} USDT.")
+    try:
+        target_id = int(context.args[0])
+        debt_amount = float(context.args[1])
+        
+        user_record = await get_user(target_id)
+        if not user_record:
+            await update.message.reply_text(f"❌ المستخدم `{target_id}` غير موجود في قاعدة البيانات.")
+            return
+            
+        new_debt = user_record.get('debt_amount', 0.0) + debt_amount
+        await update_subscription_status(target_id, debt_amount=new_debt)
+        
+        await update.message.reply_text(f"💰 **تم إضافة دين** بقيمة {debt_amount:.2f} USDT للمستخدم `{target_id}`.\n"
+                                        f"إجمالي الدين المستحق: {new_debt:.2f} USDT.")
+        
+    except ValueError:
+        await update.message.reply_text("❌ الاستخدام: /add_debt [user_id] [amount]. يجب أن يكون المبلغ رقمًا.")
 
 async def pay_debt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Starts the conversation for paying off debt."""
-    # This will be a simple manual payment request for now.
-    user_record = await get_user(update.effective_user.id)
+    """Starts the conversation for a user to pay their debt."""
+    user_id = update.effective_user.id
+    user_record = await get_user(user_id)
+    debt = user_record.get('debt_amount', 0.0) if user_record else 0.0
     
-    if not user_record or user_record['debt_amount'] <= 0:
-        await update.message.reply_text("✅ لا يوجد لديك دين مستحق حالياً.")
-        return
+    if debt <= 0:
+        await update.message.reply_text("✅ ليس لديك أي ديون مستحقة. شكراً لك!")
+        return ConversationHandler.END
         
     await update.message.reply_text(
-        f"💰 **دفع العمولة المستحقة**\n\n"
-        f"دينك المستحق هو: **{user_record['debt_amount']:.2f} USDT**.\n"
-        f"يرجى إرسال المبلغ المطلوب إلى عنوان USDT (BEP20) التالي: `{USDT_ADDRESS}`\n\n"
-        "**بعد الدفع، يرجى إرسال سكرين شوت (لقطة شاشة) لعملية التحويل لإلغاء تجميد حسابك.**"
+        "💳 **سداد العمولة المستحقة**\n\n"
+        f"دينك الحالي هو: **{debt:.2f} USDT**.\n"
+        "يرجى تحويل المبلغ إلى العنوان التالي:\n\n"
+        "**العنوان (USDT - BEP20):**\n"
+        f"`{USDT_ADDRESS}`\n\n"
+        "بعد التحويل، يرجى **إرسال لقطة شاشة** (صورة) لعملية التحويل كإثبات للدفع. سيتم إلغاء تجميد حسابك يدوياً بعد المراجعة."
     )
-    return WAITING_FOR_SCREENSHOT
+    return WAITING_FOR_DEBT_SCREENSHOT
 
-async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def receive_debt_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles the screenshot sent by the user for debt payment."""
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
     
     if not update.message.photo:
         await update.message.reply_text("❌ لم يتم إرسال صورة. يرجى إرسال لقطة شاشة (سكرين شوت) لعملية الدفع.")
-        return WAITING_FOR_SCREENSHOT
+        return WAITING_FOR_DEBT_SCREENSHOT
         
     # 1. Send the screenshot to the admin
     photo_file_id = update.message.photo[-1].file_id
@@ -444,7 +468,7 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         caption=caption
     )
     
-    # 2. Inform the user and freeze for 24 hours (Manual Review Period)
+    # 2. Inform the user
     await update.message.reply_text(
         "✅ **تم استلام لقطة الشاشة بنجاح.**\n\n"
         "جاري الآن مراجعة عملية الدفع يدوياً من قبل المدير.\n"
@@ -452,90 +476,9 @@ async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         "**شكراً لك على سداد العمولة!**"
     )
     
-    # 3. Freeze the account (Smart Freeze already handled in execute_trade)
-    # We will just end the conversation. The admin will manually unfreeze.
-    
     return ConversationHandler.END
 
-# --- GENERAL COMMANDS ---
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    user_record = await get_user(user_id)
-    
-    if user_id in WHITELISTED_USERS:
-        await update.message.reply_text("ℹ️ **حالة المستخدم:**\n\n"
-                                        "نوع المستخدم: **مميز (Whitelist)**\n"
-                                        "حالة الاشتراك: **نشط دائماً**")
-        return
-        
-    if not user_record:
-        await update.message.reply_text("ℹ️ **حالة المستخدم:**\n\n"
-                                        "لم يتم العثور على سجل لك. يرجى إرسال /start.")
-        return
-        
-    status = "نشط" if is_subscription_active(user_record) else "غير فعال"
-    end_date = user_record['subscription_end_date'] or "غير محدد"
-    
-    await update.message.reply_text(f"ℹ️ **حالة المستخدم:**\n\n"
-                                    f"نوع المستخدم: **عميل**\n"
-                                    f"حالة الاشتراك: **{status}**\n"
-                                    f"تاريخ الانتهاء: **{end_date}**\n"
-                                    f"مفاتيح API: **{'موجودة' if user_record['api_key'] else 'غير موجودة'}**")
-
-async def trade_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # Check subscription before starting conversation
-    if not await check_subscription(update, context):
-        return ConversationHandler.END
-
-
-        
-    context.user_data['is_sniping'] = False
-    await update.message.reply_text("1. 💰 أدخل مبلغ الشراء بالدولار الأمريكي (USDT):", reply_markup=ForceReply(selective=True))
-    return AMOUNT
-
-async def sniping_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    # Check subscription before starting conversation
-    if not await check_subscription(update, context):
-        return ConversationHandler.END
-
-
-        
-    context.user_data['is_sniping'] = True
-    await update.message.reply_text("1. ⚡️ أدخل مبلغ القنص بالدولار الأمريكي (USDT):", reply_markup=ForceReply(selective=True))
-    return AMOUNT
-
-# --- NEW: API Key Setting Conversation ---
-async def set_api_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-
-        
-    await update.message.reply_text("🔑 **إعداد مفاتيح API**\n\n"
-                                    "1. يرجى إرسال **API Key** الخاص بك:", reply_markup=ForceReply(selective=True))
-    return 1 # State for API Key
-
-async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['temp_api_key'] = update.message.text.strip()
-    await update.message.reply_text("2. يرجى إرسال **API Secret** الخاص بك:", reply_markup=ForceReply(selective=True))
-    return 2 # State for API Secret
-
-async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    api_secret = update.message.text.strip()
-    api_key = context.user_data['temp_api_key']
-    user_id = update.effective_user.id
-    
-    await update_api_keys(user_id, api_key, api_secret)
-    
-    await update.message.reply_text("✅ **تم حفظ مفاتيح API بنجاح!**\n"
-                                    "يمكنك الآن استخدام أوامر التداول: /trade أو /sniping.")
-    
-    return ConversationHandler.END
-
-# ---    # Admin Handlers
-    application.add_handler(CommandHandler("freeze", freeze_user_command))
-    application.add_handler(CommandHandler("unfreeze", unfreeze_user_command))
-    application.add_handler(CommandHandler("add_debt", add_debt_command))
-    application.add_handler(CommandHandler("pay_debt", pay_debt_command))
-    
-    # Subscription Handlers ---
+# --- Subscription Handlers ---
 
 async def subscribe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -553,51 +496,14 @@ async def subscribe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return WAITING_FOR_SCREENSHOT
 
-async def handle_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Handles the screenshot sent by the user for debt payment."""
-    user_id = update.effective_user.id
-    username = update.effective_user.username or update.effective_user.first_name
+async def receive_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
     
     if not update.message.photo:
         await update.message.reply_text("❌ لم يتم إرسال صورة. يرجى إرسال لقطة شاشة (سكرين شوت) لعملية الدفع.")
         return WAITING_FOR_SCREENSHOT
         
-    # 1. Send the screenshot to the admin
     photo_file_id = update.message.photo[-1].file_id
-    caption = (
-        f"🚨 **طلب سداد عمولة (Manual Review)** 🚨\n"
-        f"المستخدم: @{username} (ID: `{user_id}`)\n"
-        f"الرجاء التحقق من السداد وإلغاء تجميد الحساب يدوياً.\n"
-        f"الأوامر الإدارية: /unfreeze {user_id} و /add_debt {user_id} -[amount]"
-    )
-    
-    await context.bot.send_photo(
-        chat_id=ADMIN_CHAT_ID,
-        photo=photo_file_id,
-        caption=caption
-    )
-    
-    # 2. Inform the user and freeze for 24 hours (Manual Review Period)
-    await update.message.reply_text(
-        "✅ **تم استلام لقطة الشاشة بنجاح.**\n\n"
-        "جاري الآن مراجعة عملية الدفع يدوياً من قبل المدير.\n"
-        "سيتم إلغاء تجميد حسابك بعد التحقق من السداد.\n"
-        "**شكراً لك على سداد العمولة!**"
-    )
-    
-    # 3. Freeze the account (Smart Freeze already handled in execute_trade)
-    # We will just end the conversation. The admin will manually unfreeze.
-    
-    return ConversationHandler.END
-        
-    return ConversationHandler.END
-
-async def receive_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.effective_user
-    photo_file = update.message.photo[-1].file_id
-    
-    # Get the file object
-    file = await context.bot.get_file(photo_file)
     
     # Create the approval button
     keyboard = [[InlineKeyboardButton("✅ تأكيد الاشتراك", callback_data=f'approve_subscription_{user.id}')]]
@@ -614,7 +520,7 @@ async def receive_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     await context.bot.send_photo(
         chat_id=ADMIN_CHAT_ID,
-        photo=photo_file,
+        photo=photo_file_id,
         caption=admin_message,
         reply_markup=reply_markup
     )
@@ -645,10 +551,8 @@ async def approve_subscription_callback(update: Update, context: ContextTypes.DE
         return
         
     # 1. Update DB
-    end_date = datetime.datetime.now() + datetime.timedelta(days=30)
-    end_date_str = end_date.strftime('%Y-%m-%d %H:%M:%S')
-    
-    await update_subscription_status(target_user_id, 'active', end_date_str)
+    # Note: Subscription is now commission-based, so we just set active and unfreeze
+    await update_subscription_status(target_user_id, is_frozen=0) # Unfreeze the account
     
     # 2. Notify Client
     try:
@@ -656,7 +560,7 @@ async def approve_subscription_callback(update: Update, context: ContextTypes.DE
             chat_id=target_user_id,
             text="🎉 **تهانينا! تم تفعيل اشتراكك بنجاح!**\n\n"
                  f"حالة الاشتراك: **نشط**.\n"
-                 f"تاريخ الانتهاء: **{end_date_str}**.\n\n"
+                 "تم إلغاء تجميد حسابك.\n\n"
                  "يمكنك الآن البدء في استخدام البوت.\n"
                  "**الخطوة التالية:** يرجى إعداد مفاتيح API الخاصة بك باستخدام الأمر /set_api للبدء في التداول."
         )
@@ -665,7 +569,7 @@ async def approve_subscription_callback(update: Update, context: ContextTypes.DE
         await query.edit_message_caption(
             query.message.caption + 
             f"\n\n✅ **تم التفعيل بنجاح!**\n"
-            f"تم تفعيل الاشتراك للمستخدم {target_user_id} حتى {end_date_str}.\n"
+            f"تم إلغاء تجميد حساب المستخدم {target_user_id}.\n"
             f"تم الإخطار بواسطة: {query.from_user.first_name}",
             reply_markup=None # Remove button after action
         )
@@ -674,7 +578,7 @@ async def approve_subscription_callback(update: Update, context: ContextTypes.DE
         await query.edit_message_caption(
             query.message.caption + 
             f"\n\n⚠️ **فشل الإخطار!**\n"
-            f"تم تفعيل الاشتراك في قاعدة البيانات، لكن فشل إرسال رسالة للمستخدم: {e}",
+            f"تم إلغاء تجميد الحساب في قاعدة البيانات، لكن فشل إرسال رسالة للمستخدم: {e}",
             reply_markup=None
         )
 
@@ -719,23 +623,40 @@ async def get_profit_percent(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return PROFIT_PERCENT
             
         context.user_data['profit_percent'] = profit_percent
-        await update.message.reply_text("4. 🛡️ هل تريد استخدام وقف الخسارة (Stop Loss)؟ (نعم/لا):", reply_markup=ForceReply(selective=True))
+        
+        # --- NEW: Inline Keyboard for Stop Loss ---
+        keyboard = [
+            [InlineKeyboardButton("✅ نعم", callback_data='use_sl_yes')],
+            [InlineKeyboardButton("❌ لا", callback_data='use_sl_no')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text("4. 🛡️ هل تريد استخدام وقف الخسارة (Stop Loss)؟", reply_markup=reply_markup)
         return USE_STOP_LOSS
+        
     except ValueError:
         await update.message.reply_text("❌ Invalid input. Please enter a number.")
         return PROFIT_PERCENT
 
-async def get_use_stop_loss(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    response = update.message.text.lower()
-    if response in ['yes', 'نعم', 'y', 'ن']:
+async def use_stop_loss_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'use_sl_yes':
         context.user_data['use_stop_loss'] = True
-        await update.message.reply_text("5. 📉 أدخل نسبة وقف الخسارة (%):", reply_markup=ForceReply(selective=True))
+        await query.edit_message_text("5. 📉 أدخل نسبة وقف الخسارة (%):")
         return STOP_LOSS_PERCENT
     else:
         context.user_data['use_stop_loss'] = False
         context.user_data['stop_loss_percent'] = 0.0
-        await update.message.reply_text("✅ All data collected. Executing Trade...")
-        asyncio.create_task(sniping_and_trade(update, context, context.user_data)) if context.user_data.get('is_sniping') else asyncio.create_task(execute_trade(update, context, context.user_data))
+        await query.edit_message_text("✅ تم تأكيد جميع البيانات. جاري تنفيذ عملية التداول...")
+        
+        # Determine if it's a sniping trade or a normal trade
+        if context.user_data.get('is_sniping'):
+            asyncio.create_task(sniping_and_trade(update, context, context.user_data))
+        else:
+            asyncio.create_task(execute_trade(update, context, context.user_data))
+            
         return ConversationHandler.END
 
 async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -746,12 +667,72 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
             return STOP_LOSS_PERCENT
             
         context.user_data['stop_loss_percent'] = stop_loss_percent
-        await update.message.reply_text("✅ All data collected. Executing Trade...")
-        asyncio.create_task(sniping_and_trade(update, context, context.user_data)) if context.user_data.get('is_sniping') else asyncio.create_task(execute_trade(update, context, context.user_data))
+        await update.message.reply_text("✅ تم تأكيد جميع البيانات. جاري تنفيذ عملية التداول...")
+        
+        # Determine if it's a sniping trade or a normal trade
+        if context.user_data.get('is_sniping'):
+            asyncio.create_task(sniping_and_trade(update, context, context.user_data))
+        else:
+            asyncio.create_task(execute_trade(update, context, context.user_data))
+            
         return ConversationHandler.END
     except ValueError:
         await update.message.reply_text("❌ Invalid input. Please enter a number.")
         return STOP_LOSS_PERCENT
+
+# --- NEW: API Key Setting Conversation ---
+async def set_api_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("🔑 **إعداد مفاتيح API**\n\n"
+                                    "1. يرجى إرسال **API Key** الخاص بك:", reply_markup=ForceReply(selective=True))
+    return API_KEY_STATE # State for API Key
+
+async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data['temp_api_key'] = update.message.text.strip()
+    await update.message.reply_text("2. يرجى إرسال **API Secret** الخاص بك:", reply_markup=ForceReply(selective=True))
+    return API_SECRET_STATE # State for API Secret
+
+async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    api_secret = update.message.text.strip()
+    api_key = context.user_data['temp_api_key']
+    user_id = update.effective_user.id
+    
+    await update_api_keys(user_id, api_key, api_secret)
+    
+    await update.message.reply_text("✅ **تم حفظ مفاتيح API بنجاح!**\n"
+                                    "يمكنك الآن استخدام أوامر التداول: /trade أو /sniping.")
+    
+    return ConversationHandler.END
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Displays the user's current status and debt."""
+    user_id = update.effective_user.id
+    user_record = await get_user(user_id)
+    
+    if user_id in WHITELISTED_USERS:
+        await update.message.reply_text("👑 **حالة المستخدم:** القائمة البيضاء (وصول كامل).\n"
+                                        "لا تنطبق قيود الاشتراك أو الديون.")
+        return
+        
+    if not user_record:
+        await update.message.reply_text("ℹ️ **حالة المستخدم:** غير مسجل. يرجى استخدام /start.")
+        return
+        
+    debt = user_record.get('debt_amount', 0.0)
+    is_frozen = user_record.get('is_frozen', 0)
+    
+    status_text = "ℹ️ **حالة حسابك**\n\n"
+    status_text += f"**حالة التجميد:** {'🥶 مجمد' if is_frozen else '✅ نشط'}\n"
+    status_text += f"**الدين المستحق:** {debt:.2f} USDT\n"
+    
+    if is_frozen:
+        status_text += "\n❌ **الوصول مقيد.** يرجى سداد الدين باستخدام الأمر /pay_debt."
+    elif debt > 0:
+        status_text += "\n⚠️ **لديك دين مستحق.** يرجى سداده لتجنب التجميد الوشيك باستخدام الأمر /pay_debt."
+    else:
+        status_text += "\n✅ **حسابك في وضع جيد.**"
+        
+    await update.message.reply_text(status_text)
+
 
 # MAIN FUNCTION
 def main() -> None:
@@ -763,11 +744,11 @@ def main() -> None:
         
     # --- NEW: Run DB initialization synchronously ---
     asyncio.run(init_db())
-        
+    
     global application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     
-    # --- NEW: Subscription Conversation Handler ---
+    # --- Conversation Handler for Subscription (Payment Approval) ---
     subscription_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(subscribe_callback, pattern='^subscribe_now$')],
         states={
@@ -777,15 +758,15 @@ def main() -> None:
         allow_reentry=True
     )
     
-    # --- NEW: API Key Conversation Hand    # Conversation Handler for Debt Payment Screenshot
+    # Conversation Handler for Debt Payment Screenshot
     debt_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("pay_debt", pay_debt_command)],
         states={
-            WAITING_FOR_SCREENSHOT: [MessageHandler(filters.PHOTO, handle_screenshot)],
+            WAITING_FOR_DEBT_SCREENSHOT: [MessageHandler(filters.PHOTO & ~filters.COMMAND, receive_debt_screenshot)],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)],
+        allow_reentry=True
     )
-    application.add_handler(debt_conv_handler)
     
     # Conversation Handler for API Key Setup
     api_conv_handler = ConversationHandler(
@@ -796,28 +777,36 @@ def main() -> None:
         },
         fallbacks=[CommandHandler("cancel", cancel_command)],
     )
-    application.add_handler(api_conv_handler)ConversationHandler(
+    
+    # Conversation Handler for Trading and Sniping
+    trade_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("trade", trade_start), CommandHandler("sniping", sniping_start)],
         states={
             AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount)],
             SYMBOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_symbol)],
             PROFIT_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_profit_percent)],
-            USE_STOP_LOSS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_use_stop_loss)],
+            USE_STOP_LOSS: [CallbackQueryHandler(use_stop_loss_callback)], # Changed to CallbackQueryHandler
             STOP_LOSS_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_stop_loss_percent)],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)],
         allow_reentry=True
     )
     
-    # Add handlers
+    # Add all handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("cancel", simple_cancel_command))
     application.add_handler(CallbackQueryHandler(approve_subscription_callback, pattern='^approve_subscription_'))
     
     application.add_handler(subscription_conv_handler)
+    application.add_handler(debt_conv_handler)
     application.add_handler(api_conv_handler)
     application.add_handler(trade_conv_handler)
+    
+    # --- ADMIN COMMANDS ---
+    application.add_handler(CommandHandler("freeze", freeze_user_command))
+    application.add_handler(CommandHandler("unfreeze", unfreeze_user_command))
+    application.add_handler(CommandHandler("add_debt", add_debt_command))
     
     # === START KEEP-ALIVE WEB SERVER (Flask) ===
     # We run the Flask server in a separate thread to keep the Polling bot alive and satisfy Render's port requirement.
@@ -841,8 +830,6 @@ def home():
     return "Telegram Bot is running (Polling mode with Keep-Alive).", 200
 
 
-
 if __name__ == "__main__":
     # Start the main bot logic
     main()
-
