@@ -604,7 +604,7 @@ def main() -> None:
             1: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_key)],
             2: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_secret)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[CommandHandler("cancel", cancel_command)],
         allow_reentry=True
     )
     
