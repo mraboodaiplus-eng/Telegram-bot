@@ -1,5 +1,6 @@
-python-telegram-bot==20.8
-ccxt==4.2.55
-aiosqlite==0.19.0
+ccxt
+python-telegram-bot
 Flask==3.0.3
-nest-asyncio==1.6.0
+aiosqlite
+
+
