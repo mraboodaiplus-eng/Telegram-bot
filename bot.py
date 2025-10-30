@@ -584,7 +584,7 @@ def main() -> None:
         print("FATAL ERROR: TELEGRAM_BOT_TOKEN is not set in environment variables.")
         sys.exit(1)
         
-    # --- NEW: Run DB initialization synchronously ---
+    # Run DB initialization synchronously (This was the original code that caused the Render error)
     asyncio.run(init_db())
         
     global application
