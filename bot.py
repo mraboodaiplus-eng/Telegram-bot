@@ -385,9 +385,19 @@ async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     api_key = context.user_data['temp_api_key']
     user_id = update.effective_user.id
     
+    # --- DIAGNOSTIC PRINT ---
+    print(f"DEBUG: Attempting to save API for User {user_id}. Key: {api_key[:5]}... Secret: {api_secret[:5]}...")
+    
     # Ensure user exists in DB before attempting to update keys
     await add_new_user(user_id) 
     await update_api_keys(user_id, api_key, api_secret)
+    
+    # --- DIAGNOSTIC CHECK ---
+    user_check = await get_user(user_id)
+    if user_check and user_check['api_key'] == api_key:
+        print("DEBUG: API Keys successfully verified in DB after save.")
+    else:
+        print("DEBUG: WARNING! API Keys verification FAILED after save.")
     
     await update.message.reply_text("✅ **تم حفظ مفاتيح API بنجاح!**\n"
                                     "يمكنك الآن استخدام أوامر التداول: /trade أو /sniping.")
