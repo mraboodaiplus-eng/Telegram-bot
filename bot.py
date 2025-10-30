@@ -636,9 +636,19 @@ def main() -> None:
     import threading
     def run_web_server():
         # Render requires binding to 0.0.0.0 and using the port specified in the PORT environment variable.
-        PORT = int(os.environ.get("PORT", 8080))
-        # Use the development server since Gunicorn is not needed for Polling
-        app.run(host='0.0.0.0', port=PORT)
+        # We use a simple WSGI server (like waitress or gunicorn) for production, but for a simple keep-alive, 
+        # Render requires binding to 0.0.0.0 and using the port specified in the PORT environment variable.
+        PORT = int(os.environ.get("PORT", 10000)) # Use 10000 as a common default for Render
+        
+        try:
+            # Try to use waitress for production-grade server
+            from waitress import serve
+            print(f"Starting Waitress server on port {PORT}...")
+            serve(app, host='0.0.0.0', port=PORT)
+        except ImportError:
+            # Fallback to the built-in Flask server if waitress is not installed
+            print(f"Waitress not found. Starting Flask development server on port {PORT}...")
+            app.run(host='0.0.0.0', port=PORT)
 
     # Start the web server in a new thread
     threading.Thread(target=run_web_server, daemon=True).start()
