@@ -9,8 +9,7 @@ from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMar
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
 
 # --- NEW IMPORTS ---
-# Assuming database.py is available and contains the required functions
-from database import init_db, get_user, add_new_user, update_subscription_status, is_subscription_active, setup_vip_api_keys
+from database import init_db, get_user, add_new_user, update_subscription_status, is_subscription_active, setup_vip_api_keys, update_api_keys
 
 # Flask app instance
 app = Flask(__name__)
@@ -18,42 +17,31 @@ app = Flask(__name__)
 # Global variable to hold the Application instance
 application = None
 
-# --- CONFIGURATION AND CONSTANTS (Reverted to placeholders for secure delivery) ---
-# --- CONFIGURATION AND CONSTANTS (Updated with real values) ---
-# NOTE: The user must set TELEGRAM_BOT_TOKEN environment variable before running the bot
+# --- CONFIGURATION AND CONSTANTS ---
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-# Owner's Real Information (Hardcoded for simplicity as requested by user)
+# Owner's Real Information
 OWNER_ID = 7281928709
 BINGX_API_KEY = "M1OSlqx9F5TQD7eBxmitch4NLw9ZPpD9Xng28REiwDJe9bunCp8mPvu5GoV9QLJ3NIAO2b0YZu8GszVlIcaxw"
 BINGX_API_SECRET = "ybuQhV2CzYrvJx9wnAH4gq01z25b2FZDtZguc89zCKaOfHO4NT9IlGxaPsDmgsbVvjl4M1ammvBOVHJ4fIaw"
 
-# ABOOD's Real Information (Hardcoded for simplicity as requested by user)
+# ABOOD's Real Information
 ABOOD_ID = 5991392622
 ABOOD_API_KEY = "bg_ec710cae5f25832f2476b517b605bb4a"
 ABOOD_API_SECRET = "faca6ac6f1060c0c0a362a361af42c50b0b052a81572e248311047b4dc53870cd"
 
 # Whitelisted users (Owner and friends)
 WHITELISTED_USERS = [OWNER_ID, ABOOD_ID]
-# Admin Chat ID (Where approval requests are sent) - Owner is the admin
 ADMIN_CHAT_ID = OWNER_ID 
-ADMIN_TITLE = "المدير العام" # Title for the Admin
+ADMIN_TITLE = "المدير العام"
 
-# Payment Details (Updated to real BEP20 address)
+# Payment Details (For debt payment)
 USDT_ADDRESS = "0xb85f1c645dbb80f2617823c069dcb038a9f79895"
-SUBSCRIPTION_PRICE = "10$ شهرياً (BEP20)"
-
-# The old environment variables are no longer used for these values
-ALLOWED_USER_ID = str(OWNER_ID) # Kept for compatibility with old code logic if any
-
+COMMISSION_RATE = 0.10 # 10% commission
 
 # Conversation States
 AMOUNT, SYMBOL, PROFIT_PERCENT, USE_STOP_LOSS, STOP_LOSS_PERCENT = range(5)
-# NEW Conversation States for Subscription
-WAITING_FOR_SCREENSHOT = 50
-# NEW Conversation State for Debt Payment
 WAITING_FOR_DEBT_SCREENSHOT = 51
-# Conversation States for API Key Setup
 API_KEY_STATE = 60
 API_SECRET_STATE = 61
 
@@ -80,42 +68,33 @@ def initialize_exchange(user_id, api_key, api_secret):
 async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, exchange, symbol):
     await update.message.reply_text(f"⏳ [SNIPING MODE] جاري انتظار إدراج العملة {symbol}...")
     
-    # 1. Faster Polling (0.01 second)
     SNIPING_DELAY = 0.01 
-    
-    # 2. Use fetch_ticker for speed, but load markets periodically to ensure symbol is truly tradeable
     attempts = 0
     MAX_ATTEMPTS_BEFORE_RELOAD = 100 
     
     while True:
         attempts += 1
         try:
-            # Attempt 1: Fast check using fetch_ticker
             ticker = await exchange.fetch_ticker(symbol)
             
             if ticker and ticker.get('last') is not None:
-                # Attempt 2: Confirm listing by loading markets (more reliable check)
                 if attempts % MAX_ATTEMPTS_BEFORE_RELOAD == 0:
                     await exchange.load_markets(reload=True)
                     if symbol in exchange.markets:
                         await update.message.reply_text(f"✅ [SUCCESS] {symbol} متاح للتداول! السعر الحالي: {ticker['last']}")
                         return
                     else:
-                        # Should not happen, but a safeguard
                         await update.message.reply_text(f"⚠️ [WARNING] {symbol} ظهر في التيكر لكنه غير متاح في الأسواق. جاري الانتظار...")
                         
                 else:
-                    # Assume available if ticker is found and market reload is not due
                     await update.message.reply_text(f"✅ [SUCCESS] {symbol} متاح للتداول! السعر الحالي: {ticker['last']}")
                     return
                     
         except ccxt.BadSymbol:
-            # Expected error when symbol is not listed yet
             pass
         except Exception as e:
-            # Log other errors but continue sniping
             await update.message.reply_text(f"⚠️ [WARNING] Sniping Error: {type(e).__name__}: {e}")
-            await asyncio.sleep(1) # Longer sleep on unexpected error
+            await asyncio.sleep(1)
             
         await asyncio.sleep(SNIPING_DELAY)
 
@@ -132,12 +111,11 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         await update.message.reply_text(
             f"❌ **حسابك مجمد مؤقتاً.**\n\n"
             f"لديك دين مستحق بقيمة **{user_record.get('debt_amount', 0.0):.2f} USDT**.\n"
-            f"يرجى دفع العمولة المستحقة لإلغاء تجميد الحساب واستئناف التداول."
+            f"يرجى دفع العمولة المستحقة لإلغاء تجميد الحساب واستئناف التداول. استخدم الأمر /pay_debt"
         )
         return
 
     try:
-        # Pass user_id to initialize_exchange to handle the OWNER_ID case
         exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
     except ValueError as e:
         await update.message.reply_text(f"🚨 [ERROR] خطأ في تهيئة الاتصال: {e}")
@@ -147,7 +125,12 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     amount_usdt = params['amount']
     profit_percent = params['profit_percent']
     stop_loss_percent = params['stop_loss_percent']
-        
+    is_sniping = params.get('is_sniping', False)
+    
+    # Variables to track for commission calculation
+    buy_cost = 0.0
+    sell_revenue = 0.0
+    
     try:
         await exchange.load_markets()
         await update.message.reply_text("🔗 [INFO] Markets loaded successfully.")
@@ -164,7 +147,6 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         
         await update.message.reply_text(f"👍 [SUCCESS] Buy Order placed. ID: {market_buy_order['id']}")
         
-        # --- FIX 2: Better order detail fetching and handling ---
         await update.message.reply_text("🔍 [STEP 2/3] Waiting for execution details...")
         await asyncio.sleep(2) 
         
@@ -190,7 +172,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             if not avg_price or not filled_amount:
                 raise ccxt.ExchangeError("Failed to get execution details.")
         
-        await update.message.reply_text(f"📊 [DETAILS] Avg Price: {avg_price:.6f}, Quantity: {filled_amount:.6f}")
+        buy_cost = total_cost if 'total_cost' in locals() else amount_usdt # Actual cost of the buy order
+        await update.message.reply_text(f"📊 [DETAILS] Avg Price: {avg_price:.6f}, Quantity: {filled_amount:.6f}, Total Cost: {buy_cost:.2f} USDT")
         
         # --- STEP 3: Take Profit Limit Sell ---
         target_sell_price = avg_price * (1 + profit_percent / 100)
@@ -225,6 +208,35 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             await update.message.reply_text(f"📉 [SUCCESS] Stop Loss Order placed. ID: {stop_order['id']}")
             await update.message.reply_text("‼️ WARNING: TWO OPEN ORDERS ‼️\nManually cancel the other order if one executes. (Take Profit is Limit, Stop Loss is Market Stop)")
             
+
+        
+        sell_revenue = filled_amount_precise * target_sell_price
+        profit = sell_revenue - buy_cost
+        
+        # Only apply commission if it's a SNIPING trade AND the profit is positive
+        if is_sniping and profit > 0:
+            commission_amount = profit * COMMISSION_RATE
+            
+            # Update user's debt
+            user_record = await get_user(user_id) # Re-fetch to ensure latest debt
+            current_debt = user_record.get('debt_amount', 0.0)
+            new_debt = current_debt + commission_amount
+            
+            # Freeze the account to force payment
+            await update_subscription_status(user_id, debt_amount=new_debt, is_frozen=1)
+            
+            await update.message.reply_text(
+                f"💰 **تم احتساب العمولة!**\n"
+                f"الربح المتوقع من هذه الصفقة: {profit:.2f} USDT\n"
+                f"عمولة القنص (10%): {commission_amount:.2f} USDT\n"
+                f"إجمالي دينك المستحق: {new_debt:.2f} USDT\n\n"
+                f"🚨 **تنبيه:** تم تجميد حسابك مؤقتاً حتى يتم سداد العمولة. استخدم الأمر /pay_debt"
+            )
+        elif is_sniping and profit <= 0:
+            await update.message.reply_text("📉 **الصفقة خاسرة أو متعادلة.** لا توجد عمولة مستحقة.")
+        
+        # If not sniping, no commission is applied (as per user request)
+        
     except ccxt.ExchangeError as e:
         await update.message.reply_text(f"🚨 [EXCHANGE ERROR] {type(e).__name__}: {e}")
     except ccxt.NetworkError as e:
@@ -254,44 +266,28 @@ async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     # 2. Execute trade (This will initialize a new exchange with user's keys)
     await execute_trade(update, context, params) 
 
-# --- NEW: Subscription Check Decorator/Function ---
-async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Checks if the user is whitelisted or has an active subscription."""
+# --- ACCESS CHECK (Replaces check_subscription) ---
+async def check_access(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Checks if the user is whitelisted."""
     user_id = update.effective_user.id
     
-    # 1. Check Whitelist
     if user_id in WHITELISTED_USERS:
         return True
-        
-    # 2. Check Database Subscription Status
-    user_record = await get_user(user_id)
-    
-    if user_record and is_subscription_active(user_record):
-        return True
-    
-    # 3. Deny Access
-    keyboard = [[InlineKeyboardButton("🚀 اشترك الآن ({})".format(SUBSCRIPTION_PRICE), callback_data='subscribe_now')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
         "🔒 **الوصول مقيد.**\n\n"
-        "هذه الخدمة متاحة فقط للمشتركين النشطين.\n"
-        "حالة اشتراكك: **غير فعال** أو **منتهي**.\n\n"
-        "يرجى الاشتراك لتتمكن من استخدام أوامر التداول.",
-        reply_markup=reply_markup
+        "هذه الخدمة متاحة فقط للمستخدمين في القائمة البيضاء."
     )
     return False
 
-# --- TELEGRAM HANDLERS (Modified) ---
+# --- TELEGRAM HANDLERS ---
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
     
-    # Ensure user is in DB (for all non-whitelisted users)
     await add_new_user(user_id)
     
-    # --- NEW: Auto-setup VIP API Keys for ABOOD ---
     if user_id == ABOOD_ID:
         await setup_vip_api_keys(ABOOD_ID, ABOOD_API_KEY, ABOOD_API_SECRET)
         
@@ -325,7 +321,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "/status - ℹ️ عرض حالة البوت"
             )
         else:
-            # Fallback for any other whitelisted user if the list is expanded
             welcome_message = (
                 f"👋 مرحباً بك يا {username} (المستخدم المميز)!\n\n"
                 "**الأوامر المتاحة:**\n"
@@ -333,39 +328,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة الاشتراك"
+                "/status - ℹ️ عرض حالتك"
             )
         
         await update.message.reply_text(welcome_message)
         return
         
-    # 2. Check Subscription Status for Clients
-    user_record = await get_user(user_id)
-    
-    if user_record and is_subscription_active(user_record):
-        # Active Client
-        await update.message.reply_text(
-            f"👋 مرحباً بك يا {username} (العميل المشترك)!\n\n"
-            f"حالة اشتراكك: **نشط**، ينتهي في: {user_record['subscription_end_date']}\n\n"
-            "**الأوامر المتاحة:**\n"
-            "/trade - 📈 تداول عادي (شراء وبيع)\n"
-            "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-            "/cancel - ❌ إلغاء العملية الحالية\n"
-            "/set_api - 🔑 إعداد مفاتيح API\n"
-            "/status - ℹ️ عرض حالة الاشتراك"
-        )
-    else:
-        # Inactive Client - Show Subscription Button
-        keyboard = [[InlineKeyboardButton("🚀 اشترك الآن ({})".format(SUBSCRIPTION_PRICE), callback_data='subscribe_now')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            f"👋 مرحباً بك يا {username}!\n\n"
-            "أهلاً بك في خدمة **LiveSniperBot** المتميزة.\n"
-            "للاستفادة من خدمات التداول والقنص الآلي، يرجى الاشتراك في الخدمة.\n\n"
-            "حالة اشتراكك: **غير فعال**.",
-            reply_markup=reply_markup
-        )
+    # Non-whitelisted users see a simple message
+    await update.message.reply_text(
+        f"👋 مرحباً بك يا {username}!\n\n"
+        "أهلاً بك في خدمة **LiveSniperBot** المتميزة.\n"
+        "هذه الخدمة متاحة فقط للمستخدمين في القائمة البيضاء."
+    )
 
 # --- ADMIN COMMANDS ---
 async def freeze_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -416,10 +390,11 @@ async def add_debt_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             return
             
         new_debt = user_record.get('debt_amount', 0.0) + debt_amount
-        await update_subscription_status(target_id, debt_amount=new_debt)
+        await update_subscription_status(target_id, debt_amount=new_debt, is_frozen=1) # Freeze on debt
         
         await update.message.reply_text(f"💰 **تم إضافة دين** بقيمة {debt_amount:.2f} USDT للمستخدم `{target_id}`.\n"
-                                        f"إجمالي الدين المستحق: {new_debt:.2f} USDT.")
+                                        f"إجمالي الدين المستحق: {new_debt:.2f} USDT.\n"
+                                        f"🚨 **تنبيه:** تم تجميد الحساب حتى السداد.")
         
     except ValueError:
         await update.message.reply_text("❌ الاستخدام: /add_debt [user_id] [amount]. يجب أن يكون المبلغ رقمًا.")
@@ -462,10 +437,15 @@ async def receive_debt_screenshot(update: Update, context: ContextTypes.DEFAULT_
         f"الأوامر الإدارية: /unfreeze {user_id} و /add_debt {user_id} -[amount]"
     )
     
+    # Create the approval button (for admin to unfreeze)
+    keyboard = [[InlineKeyboardButton("✅ إلغاء التجميد وتصفير الدين", callback_data=f'unfreeze_debt_{user_id}')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     await context.bot.send_photo(
         chat_id=ADMIN_CHAT_ID,
         photo=photo_file_id,
-        caption=caption
+        caption=caption,
+        reply_markup=reply_markup
     )
     
     # 2. Inform the user
@@ -478,98 +458,38 @@ async def receive_debt_screenshot(update: Update, context: ContextTypes.DEFAULT_
     
     return ConversationHandler.END
 
-# --- Subscription Handlers ---
-
-async def subscribe_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    
-    if query.data == 'subscribe_now':
-        await query.edit_message_text(
-            "💳 **تفاصيل الاشتراك - {}**\n\n"
-            "للاشتراك، يرجى تحويل مبلغ **{}** إلى العنوان التالي:\n\n"
-            "**العنوان (USDT - BEP20):**\n"
-            "`{}`\n\n"
-            "بعد التحويل، يرجى **إرسال لقطة شاشة** (صورة) لعملية التحويل كإثبات للدفع. سيتم تفعيل اشتراكك يدوياً بعد المراجعة.".format(
-                SUBSCRIPTION_PRICE, SUBSCRIPTION_PRICE, USDT_ADDRESS
-            )
-        )
-        return WAITING_FOR_SCREENSHOT
-
-async def receive_screenshot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user = update.effective_user
-    
-    if not update.message.photo:
-        await update.message.reply_text("❌ لم يتم إرسال صورة. يرجى إرسال لقطة شاشة (سكرين شوت) لعملية الدفع.")
-        return WAITING_FOR_SCREENSHOT
-        
-    photo_file_id = update.message.photo[-1].file_id
-    
-    # Create the approval button
-    keyboard = [[InlineKeyboardButton("✅ تأكيد الاشتراك", callback_data=f'approve_subscription_{user.id}')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    # --- MODIFIED: Personalized Admin Message ---
-    admin_message = (
-        f"🔔 **رسالة إلى {ADMIN_TITLE}**\n\n"
-        "**طلب اشتراك جديد للمراجعة**\n\n"
-        f"**اسم العميل:** {user.first_name} (@{user.username or 'N/A'})\n"
-        f"**معرف العميل (ID):** `{user.id}`\n"
-        "**الإثبات:** (مرفق بالصورة أعلاه)"
-    )
-    
-    await context.bot.send_photo(
-        chat_id=ADMIN_CHAT_ID,
-        photo=photo_file_id,
-        caption=admin_message,
-        reply_markup=reply_markup
-    )
-    
-    await update.message.reply_text(
-        "✅ **تم استلام إثبات الدفع بنجاح!**\n"
-        "جاري مراجعة الدفع من قبل المدير. سيتم إخطارك فور تفعيل اشتراكك."
-    )
-    
-    return ConversationHandler.END
-
-async def approve_subscription_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def unfreeze_debt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     admin_id = query.from_user.id
     
-    # Check if the user pressing the button is the Admin
     if admin_id != ADMIN_CHAT_ID:
         await query.answer("❌ أنت لست المدير المخول لإجراء هذه العملية.", show_alert=True)
         return
 
-    await query.answer("جاري تفعيل الاشتراك...", show_alert=False)
+    await query.answer("جاري إلغاء التجميد وتصفير الدين...", show_alert=False)
     
-    # Extract user_id from callback_data (e.g., 'approve_subscription_123456')
     try:
         target_user_id = int(query.data.split('_')[-1])
     except ValueError:
         await query.edit_message_caption(query.message.caption + "\n\n🚨 **خطأ:** لم يتم التعرف على معرف المستخدم.", reply_markup=None)
         return
         
-    # 1. Update DB
-    # Note: Subscription is now commission-based, so we just set active and unfreeze
-    await update_subscription_status(target_user_id, is_frozen=0) # Unfreeze the account
+    # 1. Update DB: Unfreeze and set debt to 0
+    await update_subscription_status(target_user_id, is_frozen=0, debt_amount=0.0)
     
     # 2. Notify Client
     try:
         await context.bot.send_message(
             chat_id=target_user_id,
-            text="🎉 **تهانينا! تم تفعيل اشتراكك بنجاح!**\n\n"
-                 f"حالة الاشتراك: **نشط**.\n"
-                 "تم إلغاء تجميد حسابك.\n\n"
-                 "يمكنك الآن البدء في استخدام البوت.\n"
-                 "**الخطوة التالية:** يرجى إعداد مفاتيح API الخاصة بك باستخدام الأمر /set_api للبدء في التداول."
+            text="🎉 **تم إلغاء تجميد حسابك بنجاح!**\n\n"
+                 "تم تصفير الدين المستحق.\n"
+                 "يمكنك الآن البدء في استخدام البوت."
         )
         
         # 3. Update Admin Message
         await query.edit_message_caption(
             query.message.caption + 
-            f"\n\n✅ **تم التفعيل بنجاح!**\n"
-            f"تم إلغاء تجميد حساب المستخدم {target_user_id}.\n"
+            f"\n\n✅ **تم إلغاء التجميد وتصفير الدين بنجاح!**\n"
             f"تم الإخطار بواسطة: {query.from_user.first_name}",
             reply_markup=None # Remove button after action
         )
@@ -578,11 +498,12 @@ async def approve_subscription_callback(update: Update, context: ContextTypes.DE
         await query.edit_message_caption(
             query.message.caption + 
             f"\n\n⚠️ **فشل الإخطار!**\n"
-            f"تم إلغاء تجميد الحساب في قاعدة البيانات، لكن فشل إرسال رسالة للمستخدم: {e}",
+            f"تم إلغاء التجميد وتصفير الدين في قاعدة البيانات، لكن فشل إرسال رسالة للمستخدم: {e}",
             reply_markup=None
         )
 
-# --- Original Handlers (Kept) ---
+# --- Original Handlers ---
+
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation."""
     await update.message.reply_text('❌ تم إلغاء العملية.', reply_markup=ReplyKeyboardRemove())
@@ -624,7 +545,6 @@ async def get_profit_percent(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
         context.user_data['profit_percent'] = profit_percent
         
-        # --- NEW: Inline Keyboard for Stop Loss ---
         keyboard = [
             [InlineKeyboardButton("✅ نعم", callback_data='use_sl_yes')],
             [InlineKeyboardButton("❌ لا", callback_data='use_sl_no')]
@@ -651,7 +571,6 @@ async def use_stop_loss_callback(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data['stop_loss_percent'] = 0.0
         await query.edit_message_text("✅ تم تأكيد جميع البيانات. جاري تنفيذ عملية التداول...")
         
-        # Determine if it's a sniping trade or a normal trade
         if context.user_data.get('is_sniping'):
             asyncio.create_task(sniping_and_trade(update, context, context.user_data))
         else:
@@ -669,7 +588,6 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data['stop_loss_percent'] = stop_loss_percent
         await update.message.reply_text("✅ تم تأكيد جميع البيانات. جاري تنفيذ عملية التداول...")
         
-        # Determine if it's a sniping trade or a normal trade
         if context.user_data.get('is_sniping'):
             asyncio.create_task(sniping_and_trade(update, context, context.user_data))
         else:
@@ -680,16 +598,16 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ Invalid input. Please enter a number.")
         return STOP_LOSS_PERCENT
 
-# --- NEW: API Key Setting Conversation ---
+# --- API Key Setting Conversation ---
 async def set_api_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("🔑 **إعداد مفاتيح API**\n\n"
                                     "1. يرجى إرسال **API Key** الخاص بك:", reply_markup=ForceReply(selective=True))
-    return API_KEY_STATE # State for API Key
+    return API_KEY_STATE
 
 async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['temp_api_key'] = update.message.text.strip()
     await update.message.reply_text("2. يرجى إرسال **API Secret** الخاص بك:", reply_markup=ForceReply(selective=True))
-    return API_SECRET_STATE # State for API Secret
+    return API_SECRET_STATE
 
 async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     api_secret = update.message.text.strip()
@@ -703,6 +621,26 @@ async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     return ConversationHandler.END
 
+async def trade_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the trade conversation."""
+    if not await check_access(update, context):
+        return ConversationHandler.END
+        
+    context.user_data['is_sniping'] = False
+    await update.message.reply_text("📈 **بدء عملية التداول**\n\n"
+                                    "1. 💰 أدخل المبلغ الذي تريد التداول به (بالـ USDT):", reply_markup=ForceReply(selective=True))
+    return AMOUNT
+
+async def sniping_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the sniping conversation."""
+    if not await check_access(update, context):
+        return ConversationHandler.END
+        
+    context.user_data['is_sniping'] = True
+    await update.message.reply_text("⚡️ **بدء عملية القنص**\n\n"
+                                    "1. 💰 أدخل المبلغ الذي تريد التداول به (بالـ USDT):", reply_markup=ForceReply(selective=True))
+    return AMOUNT
+
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays the user's current status and debt."""
     user_id = update.effective_user.id
@@ -710,7 +648,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     if user_id in WHITELISTED_USERS:
         await update.message.reply_text("👑 **حالة المستخدم:** القائمة البيضاء (وصول كامل).\n"
-                                        "لا تنطبق قيود الاشتراك أو الديون.")
+                                        "لا تنطبق قيود العمولة أو الديون.")
         return
         
     if not user_record:
@@ -736,27 +674,14 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # MAIN FUNCTION
 def main() -> None:
-    # --- FIX 3: Check all required environment variables ---
-    # Check for the token
     if not TELEGRAM_BOT_TOKEN:
         print("FATAL ERROR: TELEGRAM_BOT_TOKEN is not set in environment variables.")
         sys.exit(1)
         
-    # --- NEW: Run DB initialization synchronously ---
     asyncio.run(init_db())
     
     global application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    
-    # --- Conversation Handler for Subscription (Payment Approval) ---
-    subscription_conv_handler = ConversationHandler(
-        entry_points=[CallbackQueryHandler(subscribe_callback, pattern='^subscribe_now$')],
-        states={
-            WAITING_FOR_SCREENSHOT: [MessageHandler(filters.PHOTO & ~filters.COMMAND, receive_screenshot)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel_command)],
-        allow_reentry=True
-    )
     
     # Conversation Handler for Debt Payment Screenshot
     debt_conv_handler = ConversationHandler(
@@ -785,7 +710,7 @@ def main() -> None:
             AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount)],
             SYMBOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_symbol)],
             PROFIT_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_profit_percent)],
-            USE_STOP_LOSS: [CallbackQueryHandler(use_stop_loss_callback)], # Changed to CallbackQueryHandler
+            USE_STOP_LOSS: [CallbackQueryHandler(use_stop_loss_callback)],
             STOP_LOSS_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_stop_loss_percent)],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)],
@@ -796,9 +721,8 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("cancel", simple_cancel_command))
-    application.add_handler(CallbackQueryHandler(approve_subscription_callback, pattern='^approve_subscription_'))
+    application.add_handler(CallbackQueryHandler(unfreeze_debt_callback, pattern='^unfreeze_debt_'))
     
-    application.add_handler(subscription_conv_handler)
     application.add_handler(debt_conv_handler)
     application.add_handler(api_conv_handler)
     application.add_handler(trade_conv_handler)
@@ -809,15 +733,11 @@ def main() -> None:
     application.add_handler(CommandHandler("add_debt", add_debt_command))
     
     # === START KEEP-ALIVE WEB SERVER (Flask) ===
-    # We run the Flask server in a separate thread to keep the Polling bot alive and satisfy Render's port requirement.
     import threading
     def run_web_server():
-        # Render requires binding to 0.0.0.0 and using the port specified in the PORT environment variable.
         PORT = int(os.environ.get("PORT", 8080))
-        # Use the development server since Gunicorn is not needed for Polling
         app.run(host='0.0.0.0', port=PORT)
 
-    # Start the web server in a new thread
     threading.Thread(target=run_web_server, daemon=True).start()
 
     # === START POLLING BOT ===
@@ -826,10 +746,8 @@ def main() -> None:
 
 @app.route('/', methods=['GET'])
 def home():
-    # Changed message to reflect Polling mode
     return "Telegram Bot is running (Polling mode with Keep-Alive).", 200
 
 
 if __name__ == "__main__":
-    # Start the main bot logic
     main()

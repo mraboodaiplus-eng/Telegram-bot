@@ -8,26 +8,21 @@ DATABASE_NAME = "database.db"
 async def init_db():
     """Initializes the database and creates the users table if it doesn't exist."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
-        await db.execute("""
+        await db.execute_script("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 user_type TEXT DEFAULT 'client',
                 api_key TEXT NULL,
                 api_secret TEXT NULL,
                 is_frozen INTEGER DEFAULT 0,
-                debt_amount REAL DEFAULT 0.0,
-                # subscription_status and subscription_end_date are kept for compatibility but will be unused
-                subscription_status TEXT DEFAULT 'commission',
-                subscription_end_date DATETIME NULL
-            )
+                debt_amount REAL DEFAULT 0.0
+            );
         """)
-        await db.commit()
 
 async def get_user(user_id):
     """Fetches a user's record from the database."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
         db.row_factory = aiosqlite.Row
-        # Select all columns, including the new ones (is_frozen, debt_amount)
         cursor = await db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         user = await cursor.fetchone()
         return user
@@ -41,17 +36,11 @@ async def add_new_user(user_id, user_type='client'):
         )
         await db.commit()
 
-async def update_subscription_status(user_id, status=None, end_date=None, is_frozen=None, debt_amount=None):
-    """Updates a user's subscription status, end date, frozen status, and debt amount."""
+async def update_subscription_status(user_id, is_frozen=None, debt_amount=None):
+    """Updates a user's frozen status and debt amount."""
     updates = []
     params = []
     
-    if status is not None:
-        updates.append("subscription_status = ?")
-        params.append(status)
-    if end_date is not None:
-        updates.append("subscription_end_date = ?")
-        params.append(end_date)
     if is_frozen is not None:
         updates.append("is_frozen = ?")
         params.append(is_frozen)
@@ -99,8 +88,7 @@ def is_subscription_active(user_record):
     if not user_record:
         return False
     
-    # Under the new commission model, a user is active if they are not frozen.
-    # The 'is_frozen' column will be 0 (False) for active users.
+    # A user is active if they are not frozen.
     return user_record['is_frozen'] == 0
 
 # Initialize the database file
@@ -114,4 +102,3 @@ if __name__ == '__main__':
     import asyncio
     asyncio.run(create_initial_db_file())
     print(f"Database file '{DATABASE_NAME}' created successfully.")
-
