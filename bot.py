@@ -597,14 +597,15 @@ def main() -> None:
         allow_reentry=True
     )
     
-    # --- NEW: API Key Conversation Handler ---        ConversationHandler(
-            entry_points=[CommandHandler("set_api", set_api_start)],
-            states={
-                1: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_key)],
-                2: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_secret)],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-        )allow_reentry=True
+    # --- NEW: API Key Conversation Handler ---
+    api_key_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("set_api", set_api_start)],
+        states={
+            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_key)],
+            2: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_secret)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True
     )
     
     # Conversation Handler Setup (Trade/Sniping)
@@ -626,10 +627,9 @@ def main() -> None:
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("cancel", simple_cancel_command))
     application.add_handler(CallbackQueryHandler(approve_subscription_callback, pattern='^approve_subscription_'))
-    
-    application.add_handler(subscription_conv_handler)
-    application.add_handler(api_conv_handler)
     application.add_handler(trade_conv_handler)
+    application.add_handler(subscription_conv_handler)
+    application.add_handler(api_key_conv_handler)
     
     # === START KEEP-ALIVE WEB SERVER (Flask) ===
     # We run the Flask server in a separate thread to keep the Polling bot alive and satisfy Render's port requirement.
