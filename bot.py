@@ -90,7 +90,10 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     user_id = update.effective_user.id
     user_record = await get_user(user_id)
     
-    if not user_record or not user_record['api_key'] or not user_record['api_secret']:
+    api_key = user_record['api_key'] if user_record else None
+    api_secret = user_record['api_secret'] if user_record else None
+    
+    if not api_key or not api_secret:
         await update.message.reply_text("🚨 [ERROR] لم يتم العثور على مفاتيح API الخاصة بك. يرجى إدخالها أولاً.")
         return
 
@@ -587,14 +590,18 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
 
 # MAIN FUNCTION
 def main() -> None:
+    # --- ENSURE DATABASE IS INITIALIZED ---
+    print("DEBUG: Initializing database...")
+    import asyncio
+    asyncio.run(init_db())
+    print("DEBUG: Database initialization complete.")
     # --- FIX 3: Check all required environment variables ---
     # Check for the token
     if not TELEGRAM_BOT_TOKEN:
         print("FATAL ERROR: TELEGRAM_BOT_TOKEN is not set in environment variables.")
         sys.exit(1)
         
-    # --- NEW: Run DB initialization synchronously ---
-    asyncio.run(init_db())
+
         
     global application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()

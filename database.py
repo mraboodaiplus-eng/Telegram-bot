@@ -26,7 +26,8 @@ async def get_user(user_id):
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         user = await cursor.fetchone()
-        return user
+        # Convert Row object to dict to ensure compatibility with bot.py access methods
+        return dict(user) if user else None
 
 async def add_new_user(user_id, user_type='client'):
     """Adds a new user to the database."""
@@ -73,8 +74,8 @@ def is_subscription_active(user_record):
     if not user_record:
         return False
     
-    if user_record['subscription_status'] == 'active':
-        end_date_str = user_record['subscription_end_date']
+    if user_record.get('subscription_status') == 'active':
+        end_date_str = user_record.get('subscription_end_date')
         if end_date_str:
             # Convert string to datetime object
             end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
