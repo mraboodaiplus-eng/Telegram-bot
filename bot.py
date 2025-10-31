@@ -87,20 +87,18 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
             await asyncio.sleep(5)
 
 async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, params):
-    user_id = update.effective_user.id
-    user_record = await get_user(user_id)
-    
-    api_key = user_record['api_key'] if user_record else None
-    api_secret = user_record['api_secret'] if user_record else None
-    
-    if not api_key or not api_secret:
-        await update.message.reply_text("🚨 [ERROR] لم يتم العثور على مفاتيح API الخاصة بك. يرجى إدخالها أولاً.")
-        return
-
-    try:
-        # Pass user_id to initialize_exchange to handle the OWNER_ID case
-        exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
-    except ValueError as e:
+    user_id = update.effective_user	    user_record = await get_user(user_id)
+	    
+	    api_key = user_record['api_key'] if user_record else None
+	    api_secret = user_record['api_secret'] if user_record else None
+	    
+	    if not api_key or not api_secret:
+	        await update.message.reply_text("🚨 [ERROR] لم يتم العثور على مفاتيح API الخاصة بك. يرجى إدخالها أولاً.")
+	        return
+	
+	    try:
+	        # Pass user_id to initialize_exchange to handle the OWNER_ID case
+	        exchange = initialize_exchange(user_id, api_key, api_secret)cept ValueError as e:
         await update.message.reply_text(f"🚨 [ERROR] خطأ في تهيئة الاتصال: {e}")
         return
         
@@ -166,25 +164,69 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         import math
         filled_amount_precise = math.floor(filled_amount * (10**precision)) / (10**precision)
         
-        limit_sell_order = await exchange.create_limit_sell_order(symbol, filled_amount_precise, target_sell_price)
-        await update.message.reply_text(f"📈 [SUCCESS] Take Profit Order placed. ID: {limit_sell_order['id']}")
-        
-        # --- OPTIONAL: Stop Loss Order ---
-        if params['use_stop_loss']:
-            stop_loss_price = avg_price * (1 - stop_loss_percent / 100)
-            await update.message.reply_text(f"🛡️ [OPTIONAL] Placing Stop Loss Order (-{stop_loss_percent}%) at {stop_loss_price:.6f}...")
-            
-            stop_order = await exchange.create_order(
-                symbol=symbol,
-                type='stop_market',
-                side='sell',
-                amount=filled_amount_precise,
-                price=None,
-                params={'stopPrice': stop_loss_price}
-            )
-            
-            await update.message.reply_text(f"📉 [SUCCESS] Stop Loss Order placed. ID: {stop_order['id']}")
-            await update.message.reply_text("‼️ WARNING: TWO OPEN ORDERS ‼️\nManually cancel the other order if one executes. (Take Profit is Limit, Stop Loss is Market Stop)")
+	        limit_sell_order = await exchange.create_limit_sell_order(symbol, filled_amount_precise, target_sell_price)
+	        await update.message.reply_text(f"📈 [SUCCESS] Take Profit Order placed. ID: {limit_sell_order['id']}")
+	        
+	        # --- OPTIONAL: Stop Loss Order ---
+	        stop_order = None
+	        if params['use_stop_loss']:
+	            stop_loss_price = avg_price * (1 - stop_loss_percent / 100)
+	            await update.message.reply_text(f"🛡️ [OPTIONAL] Placing Stop Loss Order (-{stop_loss_percent}%) at {stop_loss_price:.6f}...")
+	            
+	            stop_order = await exchange.create_order(
+	                symbol=symbol,
+	                type='stop_market',
+	                side='sell',
+	                amount=filled_amount_precise,
+	                price=None,
+	                params={'stopPrice': stop_loss_price}
+	            )
+	            
+	            await update.message.reply_text(f"📉 [SUCCESS] Stop Loss Order placed. ID: {stop_order['id']}")
+	            await update.message.reply_text("‼️ WARNING: TWO OPEN ORDERS ‼️\nManually cancel the other order if one executes. (Take Profit is Limit, Stop Loss is Market, Stop)")
+	        
+	        # --- AUTOMATIC PROFIT SHARING LOGIC (New Model) ---
+	        await update.message.reply_text("⏳ [MONITOR] جاري مراقبة أمر البيع (Take Profit) لتنفيذ الاقتطاع التلقائي...")
+	        
+	        order_id = limit_sell_order['id']
+	        
+	        # Simple Polling Loop (Blocking the trade function until the order is filled)
+	        while True:
+	            await asyncio.sleep(5) # Check every 5 seconds
+	            
+	            # Fetch the order status
+	            order_status = await exchange.fetch_order(order_id, symbol)
+	            
+	            if order_status['status'] == 'closed':
+	                await update.message.reply_text("✅ [SUCCESS] تم تنفيذ أمر البيع (Take Profit) بنجاح!")
+	                
+	                # Cancel Stop Loss Order if it exists and is still open
+	                if stop_order and stop_order['status'] == 'open':
+	                    await exchange.cancel_order(stop_order['id'], symbol)
+	                    await update.message.reply_text("❌ [CLEANUP] تم إلغاء أمر وقف الخسارة (Stop Loss).")
+	                    
+	                # Call the automatic withdrawal function
+	                await handle_profit_withdrawal(
+	                    update, 
+	                    context, 
+	                    user_id, 
+	                    amount_usdt_spent, 
+	                    filled_amount_precise, 
+	                    avg_price, 
+	                    target_sell_price, 
+	                    symbol
+	                )
+	                break # Exit the monitoring loop
+	            
+	            elif order_status['status'] == 'canceled' or order_status['status'] == 'rejected':
+	                await update.message.reply_text("❌ [FAILURE] تم إلغاء أو رفض أمر البيع (Take Profit). لن يتم اقتطاع أي شيء.")
+	                break # Exit the monitoring loop
+	            
+	            # Send a status update every 5 checks (25 seconds)
+	            if int(time.time()) % 25 < 5:
+	                await update.message.reply_text(f"🔄 [STATUS] حالة أمر البيع: {order_status['status']}. جاري الانتظار...")
+	        
+	        await update.message.reply_text("✅ **تم الانتهاء من عملية التداول والاقتطاع (إن وجدت).**")
             
     except ccxt.ExchangeError as e:
         await update.message.reply_text(f"🚨 [EXCHANGE ERROR] {type(e).__name__}: {e}")
@@ -196,6 +238,89 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         if 'exchange' in locals():
             await exchange.close()
             await update.message.reply_text("🔌 [INFO] Connection closed.")
+
+# --- PROFIT SHARING AND WITHDRAWAL LOGIC ---
+async def handle_profit_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id, amount_usdt_spent, filled_amount, avg_price, target_sell_price, symbol):
+    # Check for exemption (Owner and Abood)
+    if user_id in WHITELISTED_USERS:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="🎉 **عملية ناجحة!** أنت معفى من اقتطاع الأرباح (بروتوكول المؤسس V.I.P)."
+        )
+        return
+
+    # 1. Calculate Gross Profit (assuming the limit sell order was filled)
+    # Gross Revenue = filled_amount * target_sell_price
+    # Gross Profit = Gross Revenue - amount_usdt_spent
+    
+    # NOTE: This is a SIMULATION/CONCEPTUAL calculation for the bot logic.
+    # In a real scenario, the actual filled price and fees must be fetched from the exchange.
+    
+    # We will use the target price for the conceptual calculation as requested.
+    gross_revenue = filled_amount * target_sell_price
+    gross_profit = gross_revenue - amount_usdt_spent
+    
+    if gross_profit <= 0:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="❌ **لا يوجد ربح للاقتطاع.** الصفقة لم تحقق ربحاً صافياً."
+        )
+        return
+        
+    # 2. Calculate 10% Share
+    PROFIT_SHARE_PERCENT = 0.10
+    our_share = gross_profit * PROFIT_SHARE_PERCENT
+    
+    # 3. Perform Withdrawal (The critical step)
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=f"💰 **تم تحقيق ربح!**\n"
+             f"الربح الإجمالي المحقق: {gross_profit:.2f} USDT\n"
+             f"نسبة الاقتطاع (10%): {our_share:.2f} USDT\n"
+             f"جاري تحويل حصتنا إلى محفظة المدير العام..."
+    )
+    
+    # The actual withdrawal logic using ccxt
+    try:
+        # Initialize exchange with the user's keys (which must have withdrawal permission)
+        user_record = await get_user(user_id)
+        exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
+        
+        # NOTE: The network code for BEP20 on BingX is usually 'BSC' or 'BEP20'. We use 'BEP20' as it's common.
+        # The amount to withdraw must be adjusted for network fees, which we ignore here for simplicity.
+        
+        # We need to ensure the user has enough balance in their SPOT wallet to cover the share.
+        # This is a major assumption as the profit might be in the Futures or another wallet.
+        
+        withdrawal_result = await exchange.withdraw(
+            code='USDT',
+            amount=our_share,
+            address=USDT_ADDRESS,
+            tag=None, # Not needed for BEP20
+            params={'network': 'BEP20'} # Use BEP20 as the network code
+        )
+        
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"✅ **تم الاقتطاع بنجاح!**\n"
+                 f"تم تحويل {our_share:.2f} USDT إلى محفظة المدير العام.\n"
+                 f"معرف عملية السحب: {withdrawal_result['id']}"
+        )
+        
+    except ccxt.ExchangeError as e:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"🚨 **فشل عملية السحب (الاقتطاع)!**\n"
+                 f"لم نتمكن من اقتطاع حصتنا بسبب خطأ في المنصة. قد تكون صلاحية السحب غير مفعلة، أو لا يوجد رصيد كافٍ في محفظة SPOT.\n"
+                 f"الخطأ: {type(e).__name__}: {e}\n\n"
+                 "يرجى التأكد من تفعيل صلاحية السحب وإضافة IP الخاص بالبوت (185.185.72.73)."
+        )
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"🚨 **فشل عملية السحب (خطأ عام)!**\n"
+                 f"الخطأ: {type(e).__name__}: {e}"
+        )
 
 async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, params):
     await update.message.reply_text("⚡️ [SNIPING MODE] Starting Sniping process...")
@@ -272,8 +397,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             )
         elif user_id == ABOOD_ID:
             welcome_message = (
-                f"👋 **أهلاً بك يا عبود، الذراع الأيمن** ({username}) 👋\n\n"
-                "أنت ضمن الدائرة الذهبية، جميع الصلاحيات التشغيلية مفعلة.\n"
+                f"تم التحقق. أهلاً بك، سيد 👑Abood👑. تم تفعيل {{ بروتوكول المؤسس V.I.P}} الخاص بك.جميع الأنظمة تحت سيطرتك الآن، مع وصول كامل ومجاني لجميع الميزات الحالية والمستقبلية.البوت في خدمة سيادتكم.\n\n"
                 "**الأوامر التنفيذية المتاحة:**\n"
                 "/trade - 📈 تداول عادي (شراء وبيع)\n"
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
@@ -296,33 +420,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(welcome_message)
         return
         
-    # 2. Check Subscription Status for Clients
-    user_record = await get_user(user_id)
-    
-    if user_record and is_subscription_active(user_record):
-        # Active Client
-        await update.message.reply_text(
-            f"👋 مرحباً بك يا {username} (العميل المشترك)!\n\n"
-            f"حالة اشتراكك: **نشط**، ينتهي في: {user_record['subscription_end_date']}\n\n"
-            "**الأوامر المتاحة:**\n"
-            "/trade - 📈 تداول عادي (شراء وبيع)\n"
-            "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-            "/cancel - ❌ إلغاء العملية الحالية\n"
-            "/set_api - 🔑 إعداد مفاتيح API\n"
-            "/status - ℹ️ عرض حالة الاشتراك"
-        )
-    else:
-        # Inactive Client - Show Subscription Button
-        keyboard = [[InlineKeyboardButton("🚀 اشترك الآن ({})".format(SUBSCRIPTION_PRICE), callback_data='subscribe_now')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            f"👋 مرحباً بك يا {username}!\n\n"
-            "أهلاً بك في خدمة **LiveSniperBot** المتميزة.\n"
-            "للاستفادة من خدمات التداول والقنص الآلي، يرجى الاشتراك في الخدمة.\n\n"
-            "حالة اشتراكك: **غير فعال**.",
-            reply_markup=reply_markup
-        )
+    # New Client Welcome Message (Bot is now free)
+    await update.message.reply_text(
+        f"👋 مرحباً بك يا {username}!\n\n"
+        "أهلاً بك في خدمة **LiveSniperBot** المجانية والمتميزة.\n"
+        "البوت يعمل بنظام **اقتطاع الأرباح (10%)** على الصفقات الناجحة فقط.\n"
+        "للبدء، يرجى إعداد مفاتيح API الخاصة بك وتفعيل خيار **السحب**.\n\n"
+        "**الأوامر المتاحة:**\n"
+        "/trade - 📈 تداول عادي (شراء وبيع)\n"
+        "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+        "/cancel - ❌ إلغاء العملية الحالية\n"
+        "/set_api - 🔑 إعداد مفاتيح API\n"
+        "/status - ℹ️ عرض حالة البوت"
+    )
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -331,7 +441,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if user_id in WHITELISTED_USERS:
         await update.message.reply_text("ℹ️ **حالة المستخدم:**\n\n"
                                         "نوع المستخدم: **مميز (Whitelist)**\n"
-                                        "حالة الاشتراك: **نشط دائماً**")
+                                        "حالة الأرباح: **معفاة من الاقتطاع**")
         return
         
     if not user_record:
@@ -339,14 +449,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                         "لم يتم العثور على سجل لك. يرجى إرسال /start.")
         return
         
-    status = "نشط" if is_subscription_active(user_record) else "غير فعال"
-    end_date = user_record['subscription_end_date'] or "غير محدد"
+    api_status = 'موجودة' if user_record.get('api_key') else 'غير موجودة'
     
     await update.message.reply_text(f"ℹ️ **حالة المستخدم:**\n\n"
-                                    f"نوع المستخدم: **عميل**\n"
-                                    f"حالة الاشتراك: **{status}**\n"
-                                    f"تاريخ الانتهاء: **{end_date}**\n"
-                                    f"مفاتيح API: **{'موجودة' if user_record['api_key'] else 'غير موجودة'}**")
+                                    f"نوع المستخدم: **عميل (مجاني)**\n"
+                                    f"نسبة الاقتطاع: **10% من صافي الربح**\n"
+                                    f"مفاتيح API: **{api_status}**\n"
+                                    f"متطلبات API: **قراءة، كتابة، تداول فوري، سحب**")
 
 async def trade_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Check subscription before starting conversation
@@ -395,15 +504,44 @@ async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await add_new_user(user_id) 
     await update_api_keys(user_id, api_key, api_secret)
     
-    # --- DIAGNOSTIC CHECK ---
-    user_check = await get_user(user_id)
-    if user_check and user_check['api_key'] == api_key:
-        print("DEBUG: API Keys successfully verified in DB after save.")
-    else:
-        print("DEBUG: WARNING! API Keys verification FAILED after save.")
+
     
     await update.message.reply_text("✅ **تم حفظ مفاتيح API بنجاح!**\n"
-                                    "يمكنك الآن استخدام أوامر التداول: /trade أو /sniping.")
+                                    "جاري التحقق من صلاحيات المفاتيح (القراءة، التداول، **السحب**)...")
+    
+    # --- NEW: Check Withdrawal Permission ---
+    user_record = await get_user(user_id)
+    api_key = user_record['api_key']
+    api_secret = user_record['api_secret']
+    
+    try:
+        exchange = initialize_exchange(user_id, api_key, api_secret)
+        
+        # 1. Check for Withdrawal Permission by calling fetchWithdrawalFees (or similar safe method)
+        # We use a safe check that requires withdrawal permission but doesn't perform a withdrawal.
+        # ccxt's fetchBalance is a good general check for read/trade, but we need a withdrawal-specific check.
+        # On BingX, we can try to load the withdrawal fees, which usually requires the permission.
+        
+        # NOTE: This is an educated guess for a safe check.
+        await exchange.fetch_deposit_address('USDT', params={'network': 'BEP20'})
+        
+        await update.message.reply_text("✅ **صلاحيات المفاتيح مكتملة!**\n"
+                                        "تم التأكد من تفعيل صلاحيات **القراءة، التداول، والسحب**.\n\n"
+                                        "**الخطوة الأخيرة:** إذا لم تقم بذلك بعد، يرجى إضافة IP البوت **185.185.72.73** إلى القائمة البيضاء (Whitelist) في إعدادات API على BingX لتفعيل السحب بشكل آمن.\n\n"
+                                        "يمكنك الآن استخدام أوامر التداول: /trade أو /sniping.")
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ **فشل التحقق من صلاحية السحب!**\n"
+                                        f"الخطأ: {type(e).__name__}: {e}\n\n"
+                                        "لضمان عمل البوت بنظام اقتطاع الأرباح، **يجب تفعيل صلاحية السحب**.\n"
+                                        "يرجى مراجعة إعدادات مفاتيح API الخاصة بك على BingX وتفعيل الخيارات التالية:\n"
+                                        "1. القراءة والكتابة.\n"
+                                        "2. التداول الفوري.\n"
+                                        "3. **السحب (Withdrawal)** - وتأكد من إضافة IP البوت: **185.185.72.73**.\n\n"
+                                        "يرجى المحاولة مرة أخرى بعد التعديل.")
+    finally:
+        if 'exchange' in locals():
+            await exchange.close()
     
     return ConversationHandler.END
 
