@@ -189,6 +189,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         
         # Get precision for the symbol
         # Removed any potential sleep/delay here to ensure immediate execution
+        try:
             exchange.load_markets()
             if symbol not in exchange.markets:
                 raise ccxt.BadSymbol(f"Symbol {symbol} is not available on {exchange.id}.")
