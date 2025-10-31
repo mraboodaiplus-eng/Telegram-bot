@@ -759,6 +759,23 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ Invalid input. Please enter a number.")
         return STOP_LOSS_PERCENT
 
+# --- BOT COMMANDS MENU SETUP ---
+async def setup_bot_commands(application):
+    """Sets up the bot commands menu that appears in Telegram."""
+    from telegram import BotCommand
+    
+    commands = [
+        BotCommand("start", "🚀 بدء البوت والتسجيل"),
+        BotCommand("sniping", "⚡️ قنص عملة جديدة (انتظار الإدراج)"),
+        BotCommand("trade", "📈 تداول عادي (شراء وبيع)"),
+        BotCommand("set_api", "🔑 إعداد مفاتيح API"),
+        BotCommand("status", "ℹ️ عرض حالة الحساب"),
+        BotCommand("cancel", "❌ إلغاء العملية الحالية"),
+    ]
+    
+    await application.bot.set_my_commands(commands)
+    print("✅ Bot commands menu has been set up successfully!")
+
 # MAIN FUNCTION
 def main() -> None:
     # --- ENSURE DATABASE IS INITIALIZED ---
@@ -838,6 +855,9 @@ def main() -> None:
     # Start the web server in a new thread
     threading.Thread(target=run_web_server, daemon=True).start()
 
+    # === SETUP BOT COMMANDS MENU ===
+    asyncio.run(setup_bot_commands(application))
+    
     # === START POLLING BOT ===
     print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
     application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
