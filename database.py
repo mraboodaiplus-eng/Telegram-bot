@@ -18,6 +18,19 @@ async def init_db():
                 subscription_end_date DATETIME NULL
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS grids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                symbol TEXT NOT NULL,
+                lower_bound REAL NOT NULL,
+                upper_bound REAL NOT NULL,
+                num_grids INTEGER NOT NULL,
+                amount_per_order REAL NOT NULL,
+                status TEXT DEFAULT 'active',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await db.commit()
 
 async def get_user(user_id):
@@ -96,3 +109,38 @@ if __name__ == '__main__':
     asyncio.run(create_initial_db_file())
     print(f"Database file '{DATABASE_NAME}' created successfully.")
 
+
+async def add_new_grid(user_id, symbol, lower_bound, upper_bound, num_grids, amount_per_order):
+    """Adds a new grid trading configuration to the database."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        cursor = await db.execute(
+            "INSERT INTO grids (user_id, symbol, lower_bound, upper_bound, num_grids, amount_per_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, symbol, lower_bound, upper_bound, num_grids, amount_per_order)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+async def get_active_grids():
+    """Fetches all active grid trading configurations."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM grids WHERE status = 'active'")
+        grids = await cursor.fetchall()
+        return [dict(grid) for grid in grids]
+
+async def stop_grid(grid_id):
+    """Sets the status of a grid to 'stopped'."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE grids SET status = 'stopped' WHERE id = ?",
+            (grid_id,)
+        )
+        await db.commit()
+
+async def get_user_grids(user_id):
+    """Fetches all grids (active and stopped) for a specific user."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM grids WHERE user_id = ?", (user_id,))
+        grids = await cursor.fetchall()
+        return [dict(grid) for grid in grids]

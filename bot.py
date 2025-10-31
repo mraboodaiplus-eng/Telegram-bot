@@ -50,6 +50,7 @@ SNIPING_DELAY = 0.03 # Check every 0.03 seconds for high-speed sniping
 
 # Conversation States
 AMOUNT, SYMBOL, PROFIT_PERCENT, USE_STOP_LOSS, STOP_LOSS_PERCENT = range(5)
+GRID_SYMBOL, LOWER_BOUND, UPPER_BOUND, NUM_GRIDS, AMOUNT_PER_ORDER, STOP_GRID_ID = range(5, 11)
 WAITING_FOR_SCREENSHOT = 50
 
 
@@ -432,6 +433,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "**الأوامر السيادية المتاحة:**\n"
                 "/trade - 📈 تداول عادي (شراء وبيع)\n"
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+                "/grid_trade - 📊 بدء التداول الشبكي (Grid Trading)\n"
+                "/stop_grid - 🛑 إيقاف التداول الشبكي\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
                 "/status - ℹ️ عرض حالة البوت\n"
@@ -444,6 +447,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "**الأوامر التنفيذية المتاحة:**\n"
                 "/trade - 📈 تداول عادي (شراء وبيع)\n"
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+                "/grid_trade - 📊 بدء التداول الشبكي (Grid Trading)\n"
+                "/stop_grid - 🛑 إيقاف التداول الشبكي\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
                 "/status - ℹ️ عرض حالة البوت\n"
@@ -455,6 +460,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "**الأوامر المتاحة:**\n"
                 "/trade - 📈 تداول عادي (شراء وبيع)\n"
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+                "/grid_trade - 📊 بدء التداول الشبكي (Grid Trading)\n"
+                "/stop_grid - 🛑 إيقاف التداول الشبكي\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
                 "/status - ℹ️ عرض حالة الاشتراك\n"
@@ -473,6 +480,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "**الأوامر المتاحة:**\n"
         "/trade - 📈 تداول عادي (شراء وبيع)\n"
         "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+        "/grid_trade - 📊 بدء التداول الشبكي (Grid Trading)\n"
+        "/stop_grid - 🛑 إيقاف التداول الشبكي\n"
         "/cancel - ❌ إلغاء العملية الحالية\n"
         "/set_api - 🔑 إعداد مفاتيح API\n"
         "/status - ℹ️ عرض حالة البوت\n"
@@ -695,6 +704,272 @@ async def simple_cancel_command(update: Update, context: ContextTypes.DEFAULT_TY
     """A simple cancel command that does not end a conversation (used for general command handling)."""
     await update.message.reply_text("❌ Operation cancelled.")
 
+# --- Grid Trading Conversation Handlers ---
+
+async def grid_trade_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the grid trading conversation."""
+    if not await check_subscription(update, context):
+        return ConversationHandler.END
+        
+    await update.message.reply_text("1. 🪙 أدخل رمز العملة للتداول الشبكي (مثال: BTC/USDT):", reply_markup=ForceReply(selective=True))
+    return GRID_SYMBOL
+
+async def get_grid_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets the symbol and asks for the lower bound."""
+    symbol = update.message.text.strip().upper()
+    if '/' not in symbol:
+        await update.message.reply_text("❌ تنسيق الرمز غير صحيح. يرجى استخدام التنسيق (BASE/QUOTE) مثل BTC/USDT.")
+        return GRID_SYMBOL
+        
+    context.user_data['grid_symbol'] = symbol
+    await update.message.reply_text("2. ⬇️ أدخل الحد الأدنى للسعر (Lower Bound):", reply_markup=ForceReply(selective=True))
+    return LOWER_BOUND
+
+async def get_lower_bound(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets the lower bound and asks for the upper bound."""
+    try:
+        lower_bound = float(update.message.text)
+        if lower_bound <= 0:
+            await update.message.reply_text("❌ يجب أن يكون الحد الأدنى للسعر رقماً موجباً.")
+            return LOWER_BOUND
+            
+        context.user_data['lower_bound'] = lower_bound
+        await update.message.reply_text("3. ⬆️ أدخل الحد الأعلى للسعر (Upper Bound):", reply_markup=ForceReply(selective=True))
+        return UPPER_BOUND
+    except ValueError:
+        await update.message.reply_text("❌ إدخال غير صحيح. يرجى إدخال رقم.")
+        return LOWER_BOUND
+
+async def get_upper_bound(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets the upper bound and asks for the number of grids."""
+    try:
+        upper_bound = float(update.message.text)
+        lower_bound = context.user_data['lower_bound']
+        
+        if upper_bound <= lower_bound:
+            await update.message.reply_text("❌ يجب أن يكون الحد الأعلى للسعر أكبر من الحد الأدنى للسعر.")
+            return UPPER_BOUND
+            
+        context.user_data['upper_bound'] = upper_bound
+        await update.message.reply_text("4. 🔢 أدخل عدد خطوط الشبكة (Grids) (مثال: 10):", reply_markup=ForceReply(selective=True))
+        return NUM_GRIDS
+    except ValueError:
+        await update.message.reply_text("❌ إدخال غير صحيح. يرجى إدخال رقم.")
+        return UPPER_BOUND
+
+async def get_num_grids(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets the number of grids and asks for the amount per order."""
+    try:
+        num_grids = int(update.message.text)
+        if num_grids < 2 or num_grids > 50:
+            await update.message.reply_text("❌ يجب أن يكون عدد خطوط الشبكة بين 2 و 50.")
+            return NUM_GRIDS
+            
+        context.user_data['num_grids'] = num_grids
+        await update.message.reply_text("5. 💵 أدخل مبلغ الشراء/البيع لكل أمر (بالدولار الأمريكي USDT):", reply_markup=ForceReply(selective=True))
+        return AMOUNT_PER_ORDER
+    except ValueError:
+        await update.message.reply_text("❌ إدخال غير صحيح. يرجى إدخال عدد صحيح.")
+        return NUM_GRIDS
+
+async def get_amount_per_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets the amount per order and starts the grid creation process."""
+    try:
+        amount_per_order = float(update.message.text)
+        if amount_per_order <= 0:
+            await update.message.reply_text("❌ يجب أن يكون مبلغ الأمر رقماً موجباً.")
+            return AMOUNT_PER_ORDER
+            
+        context.user_data['amount_per_order'] = amount_per_order
+        
+        # All data collected, proceed to grid creation
+        await create_grid_orders(update, context)
+        
+        return ConversationHandler.END
+    except ValueError:
+        await update.message.reply_text("❌ إدخال غير صحيح. يرجى إدخال رقم.")
+        return AMOUNT_PER_ORDER
+
+# Placeholder for the main grid creation function
+async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Calculates and places the initial grid orders and saves the grid to the database."""
+    user_id = update.effective_user.id
+    user_data = context.user_data
+    
+    symbol = user_data['grid_symbol']
+    lower_bound = user_data['lower_bound']
+    upper_bound = user_data['upper_bound']
+    num_grids = user_data['num_grids']
+    amount_per_order = user_data['amount_per_order']
+    
+    await update.message.reply_text(
+        "✅ **تم استلام جميع مدخلات الشبكة!**\n"
+        f"العملة: {symbol}\n"
+        f"النطاق: {lower_bound} - {upper_bound}\n"
+        f"عدد الخطوط: {num_grids}\n"
+        f"مبلغ الأمر: {amount_per_order} USDT\n\n"
+        "جاري الآن حساب نقاط الشبكة ووضع الأوامر الأولية..."
+    )
+    
+    # 1. Initialize Exchange
+    user_record = await get_user(user_id)
+    if not user_record or not user_record.get('api_key'):
+        await update.message.reply_text("🚨 [ERROR] لم يتم العثور على مفاتيح API الخاصة بك. يرجى إدخالها أولاً باستخدام /set_api.")
+        return
+
+    try:
+        exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
+        await exchange.load_markets()
+        if symbol not in exchange.markets:
+            await update.message.reply_text(f"🚨 [ERROR] رمز العملة {symbol} غير متوفر على المنصة.")
+            return
+            
+        market = exchange.markets[symbol]
+        price_precision = market['precision']['price']
+        amount_precision = market['precision']['amount']
+        
+    except Exception as e:
+        await update.message.reply_text(f"🚨 [ERROR] فشل تهيئة الاتصال بالمنصة أو جلب معلومات السوق: {type(e).__name__}: {e}")
+        return
+    
+    # 2. Calculate Grid Points
+    try:
+        price_range = upper_bound - lower_bound
+        grid_step = price_range / num_grids
+        
+        grid_points = [lower_bound + i * grid_step for i in range(num_grids + 1)]
+        
+        # The grid will have 'num_grids' buy orders and 'num_grids' sell orders.
+        # Buy orders are placed at the lower points, Sell orders at the higher points.
+        
+        # 3. Place Initial Orders
+        placed_orders = []
+        
+        # Place Buy Orders (at the lower points)
+        for i in range(num_grids):
+            buy_price = round(grid_points[i], price_precision)
+            # Calculate amount in base currency (e.g., BTC)
+            # Assuming amount_per_order is in quote currency (USDT)
+            buy_amount_base = amount_per_order / buy_price
+            buy_amount_base = round(buy_amount_base, amount_precision)
+            
+            try:
+                order = await exchange.create_limit_buy_order(symbol, buy_amount_base, buy_price)
+                placed_orders.append(order)
+                await update.message.reply_text(f"🛒 [BUY] أمر شراء محدد عند: {buy_price:.{price_precision}f} بكمية: {buy_amount_base:.{amount_precision}f}")
+            except Exception as e:
+                await update.message.reply_text(f"⚠️ [WARNING] فشل وضع أمر الشراء عند {buy_price}: {e}")
+                
+        # Place Sell Orders (at the higher points)
+        # Note: We need to check if the user has the base currency to place sell orders.
+        # For simplicity in the initial setup, we will only place buy orders and rely on the monitoring loop to place sell orders after a buy is filled.
+        # This is a common practice for the first run of a grid bot to avoid shorting.
+        
+        if not placed_orders:
+            await update.message.reply_text("🚨 [ERROR] فشل وضع أي أوامر شراء. يرجى التحقق من رصيد USDT الخاص بك.")
+            return
+            
+        # 4. Save Grid to Database
+        grid_id = await add_new_grid(user_id, symbol, lower_bound, upper_bound, num_grids, amount_per_order)
+        
+        await update.message.reply_text(
+            f"✅ **تم إنشاء شبكة التداول بنجاح!**\n"
+            f"معرف الشبكة: **{grid_id}**\n"
+            f"تم وضع **{len(placed_orders)}** أمر شراء مبدئي.\n\n"
+            "**بدء المراقبة:** سيقوم البوت الآن بمراقبة هذه الشبكة. عند تنفيذ أي أمر شراء، سيقوم البوت تلقائياً بوضع أمر بيع محدد (Limit Sell) عند نقطة الشبكة التالية."
+        )
+        
+        # 5. Start Monitoring (This will be implemented in Phase 4)
+        # For now, we just save the grid and rely on the user to restart the bot to start the monitoring loop.
+        
+    except Exception as e:
+        await update.message.reply_text(f"🚨 [CRITICAL ERROR] حدث خطأ أثناء إنشاء الشبكة: {type(e).__name__}: {e}")
+    finally:
+        if 'exchange' in locals():
+            await exchange.close()
+
+
+# --- Grid Stop Conversation Handlers ---
+
+async def stop_grid_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the grid stopping conversation."""
+    user_id = update.effective_user.id
+    user_grids = await get_user_grids(user_id)
+    
+    if not user_grids:
+        await update.message.reply_text("❌ لا توجد لديك أي شبكات تداول مسجلة لإيقافها.")
+        return ConversationHandler.END
+        
+    active_grids = [g for g in user_grids if g['status'] == 'active']
+    
+    if not active_grids:
+        await update.message.reply_text("❌ لا توجد لديك أي شبكات تداول **نشطة** لإيقافها.")
+        return ConversationHandler.END
+        
+    message = "🛑 **إيقاف شبكة التداول**\n\n"
+    message += "الشبكات النشطة لديك:\n"
+    for grid in active_grids:
+        message += f"**ID: {grid['id']}** | {grid['symbol']} | النطاق: {grid['lower_bound']} - {grid['upper_bound']}\n"
+        
+    message += "\nيرجى إدخال **معرف الشبكة (ID)** الذي تريد إيقافه:"
+    
+    await update.message.reply_text(message, reply_markup=ForceReply(selective=True))
+    return 10 # New state for STOP_GRID_ID
+
+async def get_grid_id_to_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets the grid ID and stops the grid."""
+    user_id = update.effective_user.id
+    
+    try:
+        grid_id = int(update.message.text)
+    except ValueError:
+        await update.message.reply_text("❌ إدخال غير صحيح. يرجى إدخال رقم صحيح (معرف الشبكة).")
+        return 10
+        
+    # 1. Check if the grid belongs to the user and is active
+    user_grids = await get_user_grids(user_id)
+    target_grid = next((g for g in user_grids if g['id'] == grid_id and g['status'] == 'active'), None)
+    
+    if not target_grid:
+        await update.message.reply_text(f"❌ لم يتم العثور على شبكة نشطة بالمعرف **{grid_id}** أو أنها لا تخصك.")
+        return ConversationHandler.END
+        
+    # 2. Initialize Exchange and Cancel Orders
+    user_record = await get_user(user_id)
+    
+    try:
+        exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
+        
+        # Fetch all open orders for the symbol
+        open_orders = await exchange.fetch_open_orders(target_grid['symbol'])
+        
+        cancelled_count = 0
+        for order in open_orders:
+            # A simple check: cancel all open limit orders for the symbol
+            if order['type'] == 'limit':
+                await exchange.cancel_order(order['id'], target_grid['symbol'])
+                cancelled_count += 1
+                
+        # 3. Stop Grid in Database
+        await stop_grid(grid_id)
+        
+        await update.message.reply_text(
+            f"✅ **تم إيقاف شبكة التداول بنجاح!**\n"
+            f"معرف الشبكة: **{grid_id}**\n"
+            f"العملة: {target_grid['symbol']}\n"
+            f"تم إلغاء **{cancelled_count}** أمر مفتوح على المنصة.\n\n"
+            "لن يتم مراقبة هذه الشبكة بعد الآن."
+        )
+        
+    except Exception as e:
+        await update.message.reply_text(f"🚨 [CRITICAL ERROR] حدث خطأ أثناء إيقاف الشبكة: {type(e).__name__}: {e}")
+    finally:
+        if 'exchange' in locals():
+            await exchange.close()
+            
+    return ConversationHandler.END
+
+
 async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         amount = float(update.message.text)
@@ -774,6 +1049,148 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ Invalid input. Please enter a number.")
         return STOP_LOSS_PERCENT
 
+# --- GRID MONITORING LOOP ---
+async def grid_monitoring_loop(application: Application):
+    """Continuously monitors active grids and places new orders."""
+    while True:
+        try:
+            active_grids = await get_active_grids()
+            if not active_grids:
+                # Sleep longer if no active grids
+                await asyncio.sleep(60) 
+                continue
+                
+            for grid in active_grids:
+                user_id = grid['user_id']
+                grid_id = grid['id']
+                symbol = grid['symbol']
+                lower_bound = grid['lower_bound']
+                upper_bound = grid['upper_bound']
+                num_grids = grid['num_grids']
+                amount_per_order = grid['amount_per_order']
+                
+                user_record = await get_user(user_id)
+                if not user_record or not user_record.get('api_key'):
+                    # Grid is active but user keys are missing, stop the grid
+                    await stop_grid(grid_id)
+                    await application.bot.send_message(user_id, f"🚨 **توقف الشبكة {grid_id}**\n\nتم إيقاف شبكة التداول لـ {symbol} بسبب عدم توفر مفاتيح API.")
+                    continue
+                    
+                try:
+                    exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
+                    await exchange.load_markets()
+                    market = exchange.markets[symbol]
+                    price_precision = market['precision']['price']
+                    amount_precision = market['precision']['amount']
+                    
+                    # 1. Calculate Grid Points
+                    price_range = upper_bound - lower_bound
+                    grid_step = price_range / num_grids
+                    grid_points = [lower_bound + i * grid_step for i in range(num_grids + 1)]
+                    
+                    # 2. Fetch Open Orders
+                    open_orders = await exchange.fetch_open_orders(symbol)
+                    
+                    # 3. Check for Filled Orders (Simplified Logic)
+                    
+                    # Get the current price to determine which side (Buy/Sell) should be open
+                    ticker = await exchange.fetch_ticker(symbol)
+                    current_price = ticker['last']
+                    
+                    # Determine the next Buy and Sell points
+                    
+                    # Find the nearest grid point below the current price for Buy
+                    next_buy_price = None
+                    for price in sorted(grid_points, reverse=True):
+                        if price < current_price:
+                            next_buy_price = price
+                            break
+                            
+                    # Find the nearest grid point above the current price for Sell
+                    next_sell_price = None
+                    for price in sorted(grid_points):
+                        if price > current_price:
+                            next_sell_price = price
+                            break
+                            
+                    # --- Logic for Buy Order Replacement (If a Buy was filled) ---
+                    # Check if the next Buy order is open
+                    buy_order_open = any(order['side'] == 'buy' and round(order['price'], price_precision) == round(next_buy_price, price_precision) for order in open_orders)
+                    
+                    if next_buy_price and not buy_order_open:
+                        # A Buy order was filled (or cancelled), place a new Sell order at the next point up
+                        sell_price = round(next_buy_price + grid_step, price_precision)
+                        
+                        # Check if the sell price is within the upper bound
+                        if sell_price <= upper_bound:
+                            # Place the Sell Limit Order
+                            sell_amount_base = amount_per_order / sell_price # Approximate amount
+                            sell_amount_base = round(sell_amount_base, amount_precision)
+                            
+                            try:
+                                await exchange.create_limit_sell_order(symbol, sell_amount_base, sell_price)
+                                await application.bot.send_message(user_id, f"📈 **شبكة {grid_id} (SELL)**\n\nتم تنفيذ أمر شراء، ووضع أمر بيع جديد عند: {sell_price:.{price_precision}f}")
+                            except Exception as e:
+                                await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر البيع عند {sell_price}: {e}")
+                                
+                        # Also, place a new Buy order at the point below the filled Buy order (if within lower bound)
+                        new_buy_price = round(next_buy_price - grid_step, price_precision)
+                        if new_buy_price >= lower_bound:
+                            buy_amount_base = amount_per_order / new_buy_price
+                            buy_amount_base = round(buy_amount_base, amount_precision)
+                            
+                            try:
+                                await exchange.create_limit_buy_order(symbol, buy_amount_base, new_buy_price)
+                                await application.bot.send_message(user_id, f"🛒 **شبكة {grid_id} (BUY)**\n\nتم وضع أمر شراء جديد عند: {new_buy_price:.{price_precision}f}")
+                            except Exception as e:
+                                await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر الشراء عند {new_buy_price}: {e}")
+                                
+                    # --- Logic for Sell Order Replacement (If a Sell was filled) ---
+                    # Check if the next Sell order is open
+                    sell_order_open = any(order['side'] == 'sell' and round(order['price'], price_precision) == round(next_sell_price, price_precision) for order in open_orders)
+                    
+                    if next_sell_price and not sell_order_open:
+                        # A Sell order was filled (or cancelled), place a new Buy order at the next point down
+                        buy_price = round(next_sell_price - grid_step, price_precision)
+                        
+                        # Check if the buy price is within the lower bound
+                        if buy_price >= lower_bound:
+                            # Place the Buy Limit Order
+                            buy_amount_base = amount_per_order / buy_price
+                            buy_amount_base = round(buy_amount_base, amount_precision)
+                            
+                            try:
+                                await exchange.create_limit_buy_order(symbol, buy_amount_base, buy_price)
+                                await application.bot.send_message(user_id, f"🛒 **شبكة {grid_id} (BUY)**\n\nتم تنفيذ أمر بيع، ووضع أمر شراء جديد عند: {buy_price:.{price_precision}f}")
+                            except Exception as e:
+                                await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر الشراء عند {buy_price}: {e}")
+                                
+                        # Also, place a new Sell order at the point above the filled Sell order (if within upper bound)
+                        new_sell_price = round(next_sell_price + grid_step, price_precision)
+                        if new_sell_price <= upper_bound:
+                            sell_amount_base = amount_per_order / new_sell_price # Approximate amount
+                            sell_amount_base = round(sell_amount_base, amount_precision)
+                            
+                            try:
+                                await exchange.create_limit_sell_order(symbol, sell_amount_base, new_sell_price)
+                                await application.bot.send_message(user_id, f"📈 **شبكة {grid_id} (SELL)**\n\nتم وضع أمر بيع جديد عند: {new_sell_price:.{price_precision}f}")
+                            except Exception as e:
+                                await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر البيع عند {new_sell_price}: {e}")
+                                
+                except Exception as e:
+                    print(f"Error monitoring grid {grid_id}: {e}")
+                    await application.bot.send_message(user_id, f"🚨 **خطأ فادح في مراقبة الشبكة {grid_id}**\n\nالخطأ: {type(e).__name__}: {e}")
+                finally:
+                    if 'exchange' in locals():
+                        await exchange.close()
+                        
+            # Sleep for a short interval before checking again
+            await asyncio.sleep(5) 
+            
+        except Exception as e:
+            print(f"Global Grid Monitoring Error: {e}")
+            await asyncio.sleep(60) # Sleep longer on global error
+
 # MAIN FUNCTION
 def main() -> None:
     # --- ENSURE DATABASE IS INITIALIZED ---
@@ -814,6 +1231,28 @@ def main() -> None:
     )
     
     # Conversation Handler Setup (Trade/Sniping)
+    grid_stop_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("stop_grid", stop_grid_start)],
+        states={
+            STOP_GRID_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_grid_id_to_stop)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+        allow_reentry=True
+    )
+    
+    grid_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("grid_trade", grid_trade_start)],
+        states={
+            GRID_SYMBOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_grid_symbol)],
+            LOWER_BOUND: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_lower_bound)],
+            UPPER_BOUND: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_upper_bound)],
+            NUM_GRIDS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_num_grids)],
+            AMOUNT_PER_ORDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount_per_order)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_command)],
+        allow_reentry=True
+    )
+    
     trade_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("trade", trade_start), CommandHandler("sniping", sniping_start)],
         states={
@@ -833,6 +1272,8 @@ def main() -> None:
     application.add_handler(CommandHandler("support", support_command))
     application.add_handler(CommandHandler("cancel", simple_cancel_command))
     application.add_handler(CallbackQueryHandler(approve_subscription_callback, pattern='^approve_subscription_'))
+    application.add_handler(grid_stop_conv_handler)
+    application.add_handler(grid_conv_handler)
     application.add_handler(trade_conv_handler)
     application.add_handler(subscription_conv_handler)
     application.add_handler(api_key_conv_handler)
@@ -854,6 +1295,9 @@ def main() -> None:
     # Start the web server in a new thread
     threading.Thread(target=run_web_server, daemon=True).start()
 
+    # === START GRID MONITORING TASK ===
+    asyncio.create_task(grid_monitoring_loop(application))
+    
     # === START POLLING BOT ===
     print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
     application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
