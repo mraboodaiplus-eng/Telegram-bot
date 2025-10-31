@@ -1295,12 +1295,14 @@ def main() -> None:
     # Start the web server in a new thread
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    # === START GRID MONITORING TASK ===
-    asyncio.create_task(grid_monitoring_loop(application))
-    
     # === START POLLING BOT ===
     print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
-    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
+    
+    # Start the grid monitoring loop after the event loop is running
+    async def post_init(application: Application):
+        asyncio.create_task(grid_monitoring_loop(application))
+        
+    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES, post_init=post_init)
 
 @app.route('/', methods=['GET'])
 def home():
