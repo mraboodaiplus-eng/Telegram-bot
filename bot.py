@@ -99,8 +99,9 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
             # The symbol is not listed yet, wait and try again
             await asyncio.sleep(SNIPING_DELAY)
         except Exception as e:
-            await update.message.reply_text(f"⚠️ [WARNING] Sniping Error: {type(e).__name__}: {e}")
-            await asyncio.sleep(5)
+            # Do not send repeated warning messages to the user. Log internally only.
+            # await update.message.reply_text(f"⚠️ [WARNING] Sniping Error: {type(e).__name__}: {e}")
+            await asyncio.sleep(SNIPING_DELAY)
 
 async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, params):
     """Executes a market buy, sets a limit sell (Take Profit), and an optional stop loss."""
