@@ -87,7 +87,8 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
             await asyncio.sleep(5)
 
 async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, params):
-    user_id = update.effective_user	    user_record = await get_user(user_id)
+	    user_id = update.effective_user.id
+	    user_record = await get_user(user_id)
 	    
 	    api_key = user_record['api_key'] if user_record else None
 	    api_secret = user_record['api_secret'] if user_record else None
