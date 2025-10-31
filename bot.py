@@ -83,7 +83,7 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
     # 1. Initial Check: If the symbol is already listed and tradable, proceed immediately.
     try:
         ticker = await exchange.fetch_ticker(symbol)
-        if ticker:
+        if ticker and ticker.get('last') is not None:
             await update.message.reply_text(f"✅ [SUCCESS] {symbol} is already listed and tradable! Current price: {ticker['last']:.6f}")
             return
     except (ccxt.BadSymbol, ccxt.ExchangeError):
@@ -96,7 +96,7 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
     while True:
         try:
             ticker = await exchange.fetch_ticker(symbol)
-            if ticker:
+            if ticker and ticker.get('last') is not None:
                 await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed and tradable! Current price: {ticker['last']:.6f}")
                 return
         except (ccxt.BadSymbol, ccxt.ExchangeError):
