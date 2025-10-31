@@ -99,7 +99,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
 	
 	    try:
 	        # Pass user_id to initialize_exchange to handle the OWNER_ID case
-	        exchange = initialize_exchange(user_id, api_key, api_secret)cept ValueError as e:
+	        exchange = initialize_exchange(user_id, api_key, api_secret)
+	    except ValueError as e:
         await update.message.reply_text(f"🚨 [ERROR] خطأ في تهيئة الاتصال: {e}")
         return
         
