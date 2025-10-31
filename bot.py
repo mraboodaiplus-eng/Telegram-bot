@@ -1299,10 +1299,10 @@ def main() -> None:
     print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
     
     # Start the grid monitoring loop after the event loop is running
-    async def post_init(application: Application):
+    async def post_init_callback(application: Application):
         asyncio.create_task(grid_monitoring_loop(application))
         
-    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES, post_init=post_init)
+    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES, post_init=post_init_callback)
 
 @app.route('/', methods=['GET'])
 def home():
