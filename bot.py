@@ -834,6 +834,8 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
     symbol = user_data['grid_symbol']
     lower_bound = user_data['lower_bound']
     upper_bound = user_data['upper_bound']
+    # The error is likely here, as range() expects an integer.
+    # We ensure num_grids is an integer, but it's safer to cast it again for the loop.
     num_grids = int(user_data['num_grids'])
     amount_per_order = user_data['amount_per_order']
     
@@ -1133,7 +1135,7 @@ async def grid_monitoring_loop(application: Application):
                 symbol = grid['symbol']
                 lower_bound = grid['lower_bound']
                 upper_bound = grid['upper_bound']
-                num_grids = int(grid['num_grids'])
+                    num_grids = int(grid['num_grids']))
                 amount_per_order = grid['amount_per_order']
                 
                 user_record = await get_user(user_id)
