@@ -507,11 +507,8 @@ async def set_api_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return 1 # State for API Key
 
 async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    symbol = update.message.text.upper()
-    # Append /USDT if not already present
-    if "/USDT" not in symbol:
-        symbol += "/USDT"
-    context.user_data['temp_symbol'] = symbol
+    api_key = update.message.text.strip()
+    context.user_data['temp_api_key'] = api_key
     await update.message.reply_text("2. يرجى إرسال **API Secret** الخاص بك:", reply_markup=ForceReply(selective=True))
     return 2 # State for API Secret
 
@@ -522,6 +519,7 @@ async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Ensure user exists in DB before attempting to update keys
     await add_new_user(user_id) 
+    # Save the keys immediately before any check
     await update_api_keys(user_id, api_key, api_secret)
     
     await update.message.reply_text("✅ **تم حفظ مفاتيح API بنجاح!**\n"
