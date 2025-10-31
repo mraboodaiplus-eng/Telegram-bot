@@ -84,10 +84,17 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
     
     while True:
         try:
-            ticker = await exchange.fetch_ticker(symbol)
-            if ticker:
-                await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed! Current price: {ticker['last']}")
-                return
+            exchange.load_markets()
+            if symbol in exchange.markets:
+                market = exchange.markets[symbol]
+                if market['active'] and market['spot'] and market['trade']:
+                    ticker = await exchange.fetch_ticker(symbol)
+                    await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed and tradable! Current price: {ticker['last']:.6f}")
+                    return
+                else:
+                    # Symbol is listed but not yet tradable, continue waiting
+                    await asyncio.sleep(SNIPING_DELAY)
+                    continue
         except ccxt.BadSymbol:
             # The symbol is not listed yet, wait and try again
             await asyncio.sleep(SNIPING_DELAY)
@@ -499,7 +506,11 @@ async def set_api_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     return 1 # State for API Key
 
 async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data['temp_api_key'] = update.message.text.strip()
+    symbol = update.message.text.upper()
+    # Append /USDT if not already present
+    if "/USDT" not in symbol:
+        symbol += "/USDT"
+    context.user_data['temp_symbol'] = symbol
     await update.message.reply_text("2. يرجى إرسال **API Secret** الخاص بك:", reply_markup=ForceReply(selective=True))
     return 2 # State for API Secret
 
@@ -684,6 +695,8 @@ async def get_symbol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Ensure the symbol is in the correct format (e.g., BTC/USDT)
     if '/' not in symbol_input:
         symbol_input = f"{symbol_input}/USDT"
+    # Ensure the symbol is uppercase
+    symbol_input = symbol_input.upper()
         
     context.user_data['symbol'] = symbol_input
     await update.message.reply_text("3. 📈 أدخل نسبة الربح المستهدفة (%) (مثال: 5):", reply_markup=ForceReply(selective=True))
