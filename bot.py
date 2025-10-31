@@ -46,7 +46,7 @@ USDT_ADDRESS = "0xb85f1c645dbb80f2617823c069dcb038a9f79895"
 SUBSCRIPTION_PRICE = "10$ شهرياً (BEP20)"
 
 # Sniping Delay (Missing Constant)
-SNIPING_DELAY = 10 # Check every 10 seconds
+SNIPING_DELAY = 0.03 # Check every 0.03 seconds for high-speed sniping
 
 # Conversation States
 AMOUNT, SYMBOL, PROFIT_PERCENT, USE_STOP_LOSS, STOP_LOSS_PERCENT = range(5)
@@ -216,13 +216,14 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             await update.message.reply_text("‼️ WARNING: TWO OPEN ORDERS ‼️\nManually cancel the other order if one executes. (Take Profit is Limit, Stop Loss is Market, Stop)")
         
         # --- AUTOMATIC PROFIT SHARING LOGIC ---
+        # Send the monitoring message ONCE
         await update.message.reply_text("⏳ [MONITOR] جاري مراقبة أمر البيع (Take Profit) لتنفيذ الاقتطاع التلقائي...")
         
         order_id = limit_sell_order['id']
         
         # Simple Polling Loop (Blocking the trade function until the order is filled)
         while True:
-            await asyncio.sleep(5) # Check every 5 seconds
+            await asyncio.sleep(0.03) # Check every 0.03 seconds for high-speed sniping and monitoring
             
             # Fetch the order status
             order_status = await exchange.fetch_order(order_id, symbol)
@@ -240,7 +241,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
                     update, 
                     context, 
                     user_id, 
-                    amount_usdt, # amount_usdt_spent is the initial investment
+                    amount_usdt_spent, # amount_usdt_spent is the initial investment
                     filled_amount_precise, 
                     avg_price, 
                     target_sell_price, 
@@ -252,10 +253,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
                 await update.message.reply_text("❌ [FAILURE] تم إلغاء أو رفض أمر البيع (Take Profit). لن يتم اقتطاع أي شيء.")
                 break # Exit the monitoring loop
             
-            # Send a status update every 5 checks (25 seconds)
-            if int(time.time()) % 25 < 5:
-                await update.message.reply_text(f"🔄 [STATUS] حالة أمر البيع: {order_status['status']}. جاري الانتظار...")
-        
+            # NO REPEATING STATUS MESSAGE - Monitoring continues silently
+            
         await update.message.reply_text("✅ **تم الانتهاء من عملية التداول والاقتطاع (إن وجدت).**")
             
     except ccxt.ExchangeError as e:
@@ -273,7 +272,9 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
 async def handle_profit_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id, amount_usdt_spent, filled_amount, avg_price, target_sell_price, symbol):
     """Calculates profit and attempts to withdraw 10% share."""
     # Check for exemption (Owner and Abood)
+    # Check for exemption (Owner and Abood)
     if user_id in WHITELISTED_USERS:
+        # Send message to the user that they are exempt, but do not proceed with withdrawal logic
         await context.bot.send_message(
             chat_id=user_id,
             text="🎉 **عملية ناجحة!** أنت معفى من اقتطاع الأرباح (بروتوكول المؤسس V.I.P)."
@@ -518,7 +519,13 @@ async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_record = await get_user(user_id)
     api_key = user_record['api_key']
     api_secret = user_record['api_secret']
-    
+
+    # VIP users (Owner and Abood) are assumed to have correct keys and we skip the strict withdrawal check
+    if user_id in WHITELISTED_USERS:
+        await update.message.reply_text("✅ **صلاحيات المفاتيح مكتملة (VIP)!**\n"
+                                        "تم افتراض تفعيل جميع الصلاحيات اللازمة (بما في ذلك السحب) لمستخدمي القائمة البيضاء.\n\n"
+                                        "يمكنك الآن استخدام أوامر التداول: /trade أو /sniping.")
+        return ConversationHandler.END
     try:
         exchange = initialize_exchange(user_id, api_key, api_secret)
         
