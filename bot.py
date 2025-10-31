@@ -80,22 +80,26 @@ def initialize_exchange(user_id, api_key, api_secret):
 async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, exchange, symbol):
     """Waits for the symbol to be listed on the exchange (Sniping Mode)."""
     # Fixed Syntax Error: The f-string was malformed and contained extraneous code.
+    # 1. Initial Check: If the symbol is already listed and tradable, proceed immediately.
+    try:
+        ticker = await exchange.fetch_ticker(symbol)
+        if ticker:
+            await update.message.reply_text(f"✅ [SUCCESS] {symbol} is already listed and tradable! Current price: {ticker['last']:.6f}")
+            return
+    except (ccxt.BadSymbol, ccxt.ExchangeError):
+        # Ignore initial check errors and proceed to the waiting loop
+        pass
+        
+    # 2. Waiting Loop: If not listed, start the waiting process.
     await update.message.reply_text(f"⏳ [SNIPING MODE] جاري انتظار إدراج العملة {symbol}...")
     
     while True:
         try:
-            exchange.load_markets()
-            if symbol in exchange.markets:
-                market = exchange.markets[symbol]
-                if market['active'] and market['spot'] and market['trade']:
-                    ticker = await exchange.fetch_ticker(symbol)
-                    await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed and tradable! Current price: {ticker['last']:.6f}")
-                    return
-                else:
-                    # Symbol is listed but not yet tradable, continue waiting
-                    await asyncio.sleep(SNIPING_DELAY)
-                    continue
-        except ccxt.BadSymbol:
+            ticker = await exchange.fetch_ticker(symbol)
+            if ticker:
+                await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed and tradable! Current price: {ticker['last']:.6f}")
+                return
+        except (ccxt.BadSymbol, ccxt.ExchangeError):
             # The symbol is not listed yet, wait and try again
             await asyncio.sleep(SNIPING_DELAY)
         except Exception as e:
