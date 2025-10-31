@@ -872,7 +872,7 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
         price_range = upper_bound - lower_bound
         grid_step = price_range / num_grids
         
-        grid_points = [lower_bound + i * grid_step for i in range(num_grids + 1)]
+        grid_points = [lower_bound + i * grid_step for i in range(int(num_grids) + 1)]
         
         # The grid will have 'num_grids' buy orders and 'num_grids' sell orders.
         # Buy orders are placed at the lower points, Sell orders at the higher points.
@@ -881,7 +881,7 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
         placed_orders = []
         
         # Place Buy Orders (at the lower points)
-        for i in range(num_grids):
+        for i in range(int(num_grids)):
             buy_price = round(grid_points[i], price_precision)
             # Calculate amount in base currency (e.g., BTC)
             # Assuming amount_per_order is in quote currency (USDT)
@@ -1153,7 +1153,7 @@ async def grid_monitoring_loop(application: Application):
                     # 1. Calculate Grid Points
                     price_range = upper_bound - lower_bound
                     grid_step = price_range / num_grids
-                    grid_points = [lower_bound + i * grid_step for i in range(num_grids + 1)]
+                    grid_points = [lower_bound + i * grid_step for i in range(int(num_grids) + 1)]
                     
                     # 2. Fetch Open Orders
                     open_orders = await exchange.fetch_open_orders(symbol)
