@@ -140,15 +140,22 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     stop_loss_percent = params['stop_loss_percent']
     
     try:
-        await update.message.reply_text(f"🛒 [STEP 1/3] Placing Market Buy Order for {amount_usdt} USDT...")
+        # Determine the order type and price for the buy order
+        order_type = 'limit' if params['order_type'] == 'limit' else 'market'
+        order_price = params.get('limit_price') if order_type == 'limit' else None
+        
+        if order_type == 'market':
+            await update.message.reply_text(f"🛒 [STEP 1/3] Placing Market Buy Order for {amount_usdt} USDT...")
+        else:
+            await update.message.reply_text(f"🛒 [STEP 1/3] Placing Limit Buy Order at {order_price} for {amount_usdt} USDT...")
 
         # Fixed Syntax Error: Corrected the line 105 error
         market_buy_order = await exchange.create_order(
             symbol=symbol,
-            type='market',
+            type=order_type,
             side='buy',
             amount=None,
-            price=None,
+            price=order_price, # Only used for limit order
             params={'cost': amount_usdt} # Use 'cost' parameter to specify amount in quote currency (USDT)
         )
         
@@ -433,8 +440,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "**الأوامر السيادية المتاحة:**\n"
                 "/trade - 📈 تداول عادي (شراء وبيع)\n"
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-                "/grid_trade - 📊 بدء التداول الشبكي (Grid Trading)\n"
-                "/stop_grid - 🛑 إيقاف التداول الشبكي\n"
+                "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
+                "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
                 "/status - ℹ️ عرض حالة البوت\n"
@@ -447,8 +454,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "**الأوامر التنفيذية المتاحة:**\n"
                 "/trade - 📈 تداول عادي (شراء وبيع)\n"
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-                "/grid_trade - 📊 بدء التداول الشبكي (Grid Trading)\n"
-                "/stop_grid - 🛑 إيقاف التداول الشبكي\n"
+                "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
+                "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
                 "/status - ℹ️ عرض حالة البوت\n"
@@ -460,8 +467,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "**الأوامر المتاحة:**\n"
                 "/trade - 📈 تداول عادي (شراء وبيع)\n"
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-                "/grid_trade - 📊 بدء التداول الشبكي (Grid Trading)\n"
-                "/stop_grid - 🛑 إيقاف التداول الشبكي\n"
+                "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
+                "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
                 "/status - ℹ️ عرض حالة الاشتراك\n"
@@ -480,8 +487,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "**الأوامر المتاحة:**\n"
         "/trade - 📈 تداول عادي (شراء وبيع)\n"
         "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-        "/grid_trade - 📊 بدء التداول الشبكي (Grid Trading)\n"
-        "/stop_grid - 🛑 إيقاف التداول الشبكي\n"
+        "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
+        "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
         "/cancel - ❌ إلغاء العملية الحالية\n"
         "/set_api - 🔑 إعداد مفاتيح API\n"
         "/status - ℹ️ عرض حالة البوت\n"
@@ -827,7 +834,7 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
     symbol = user_data['grid_symbol']
     lower_bound = user_data['lower_bound']
     upper_bound = user_data['upper_bound']
-    num_grids = user_data['num_grids']
+    num_grids = int(user_data['num_grids'])
     amount_per_order = user_data['amount_per_order']
     
     await update.message.reply_text(
@@ -874,7 +881,7 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
         placed_orders = []
         
         # Place Buy Orders (at the lower points)
-        for i in range(num_grids):
+        for i in range(int(num_grids)):
             buy_price = round(grid_points[i], price_precision)
             # Calculate amount in base currency (e.g., BTC)
             # Assuming amount_per_order is in quote currency (USDT)
