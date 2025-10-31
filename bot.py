@@ -434,7 +434,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة البوت"
+                "/status - ℹ️ عرض حالة البوت\n"
+                "/support - 🤝 مركز الدعم والمساعدة"
             )
         elif user_id == ABOOD_ID:
             welcome_message = (
@@ -445,7 +446,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة البوت"
+                "/status - ℹ️ عرض حالة البوت\n"
+                "/support - 🤝 مركز الدعم والمساعدة"
             )
         else:
             welcome_message = (
@@ -455,7 +457,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
                 "/cancel - ❌ إلغاء العملية الحالية\n"
                 "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة الاشتراك"
+                "/status - ℹ️ عرض حالة الاشتراك\n"
+                "/support - 🤝 مركز الدعم والمساعدة"
             )
         
         await update.message.reply_text(welcome_message)
@@ -472,7 +475,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
         "/cancel - ❌ إلغاء العملية الحالية\n"
         "/set_api - 🔑 إعداد مفاتيح API\n"
-        "/status - ℹ️ عرض حالة البوت"
+        "/status - ℹ️ عرض حالة البوت\n"
+        "/support - 🤝 مركز الدعم والمساعدة"
     )
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -825,8 +829,8 @@ def main() -> None:
     
     # Add handlers
     application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(CommandHandler("status", status_command))
-        application.add_handler(CommandHandler("support", support_command))
+    application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("support", support_command))
     application.add_handler(CommandHandler("cancel", simple_cancel_command))
     application.add_handler(CallbackQueryHandler(approve_subscription_callback, pattern='^approve_subscription_'))
     application.add_handler(trade_conv_handler)
