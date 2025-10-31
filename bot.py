@@ -1135,7 +1135,7 @@ async def grid_monitoring_loop(application: Application):
                 symbol = grid['symbol']
                 lower_bound = grid['lower_bound']
                 upper_bound = grid['upper_bound']
-                    num_grids = int(grid['num_grids']))
+                num_grids = int(grid['num_grids'])
                 amount_per_order = grid['amount_per_order']
                 
                 user_record = await get_user(user_id)
