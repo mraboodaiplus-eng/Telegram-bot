@@ -1302,7 +1302,10 @@ def main() -> None:
     async def post_init_callback(application: Application):
         asyncio.create_task(grid_monitoring_loop(application))
         
-    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES, post_init=post_init_callback)
+    # The post_init argument is not supported in this version. We will use the application.post_init hook instead.
+    application.post_init = post_init_callback
+    
+    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
 
 @app.route('/', methods=['GET'])
 def home():
