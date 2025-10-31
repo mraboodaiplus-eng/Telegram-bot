@@ -405,6 +405,17 @@ async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     return True # Allow all users to proceed to the trade conversation
 
+async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Sends a message with the support contact information."""
+    support_username = "@SYRIATRADE1"
+    message = (
+        "🤝 **مركز الدعم والمساعدة**\n\n"
+        "إذا كان لديك أي **سؤال، اقتراح، أو واجهتك أي مشكلة** في استخدام البوت، يرجى التواصل مباشرة مع فريق الدعم.\n\n"
+        f"**مسؤول الدعم:** {support_username}\n\n"
+        "نحن هنا لخدمتك على مدار الساعة!"
+    )
+    await update.message.reply_text(message)
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
@@ -759,23 +770,6 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ Invalid input. Please enter a number.")
         return STOP_LOSS_PERCENT
 
-# --- BOT COMMANDS MENU SETUP ---
-async def setup_bot_commands(application):
-    """Sets up the bot commands menu that appears in Telegram."""
-    from telegram import BotCommand
-    
-    commands = [
-        BotCommand("start", "🚀 بدء البوت والتسجيل"),
-        BotCommand("sniping", "⚡️ قنص عملة جديدة (انتظار الإدراج)"),
-        BotCommand("trade", "📈 تداول عادي (شراء وبيع)"),
-        BotCommand("set_api", "🔑 إعداد مفاتيح API"),
-        BotCommand("status", "ℹ️ عرض حالة الحساب"),
-        BotCommand("cancel", "❌ إلغاء العملية الحالية"),
-    ]
-    
-    await application.bot.set_my_commands(commands)
-    print("✅ Bot commands menu has been set up successfully!")
-
 # MAIN FUNCTION
 def main() -> None:
     # --- ENSURE DATABASE IS INITIALIZED ---
@@ -831,7 +825,8 @@ def main() -> None:
     
     # Add handlers
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("status", status_command))
+        application.add_handler(CommandHandler("support", support_command))
     application.add_handler(CommandHandler("cancel", simple_cancel_command))
     application.add_handler(CallbackQueryHandler(approve_subscription_callback, pattern='^approve_subscription_'))
     application.add_handler(trade_conv_handler)
@@ -855,9 +850,6 @@ def main() -> None:
     # Start the web server in a new thread
     threading.Thread(target=run_web_server, daemon=True).start()
 
-    # === SETUP BOT COMMANDS MENU ===
-    asyncio.run(setup_bot_commands(application))
-    
     # === START POLLING BOT ===
     print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
     application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
