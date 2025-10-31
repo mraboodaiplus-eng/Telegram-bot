@@ -72,49 +72,37 @@ def initialize_exchange(user_id, api_key, api_secret):
     })
 
 async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, exchange, symbol):
-    await update.message.reply_text(f"⏳ [SNIPING MODE] جاري انتظار إدراج العملة {symbol}...")
-    SNIPING_DELAY = 0.03 # تم التحديث بناءً على طلب المستخدم
-    while True:
-        try:
-            ticker = await exchange.fetch_ticker(symbol)
-            if ticker:
-                await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed! Current price: {ticker['last']}")
-                return
-        except ccxt.BadSymbol:
-            await asyncio.sleep(SNIPING_DELAY)
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ [WARNING] Sniping Error: {type(e).__name__}: {e}")
-            await asyncio.sleep(5)
+    await update.message.reply_text(f"⏳ [SNIPING MODE] جاري انتظار إدراج العمل	    while True:
+	        try:
+	            ticker = await exchange.fetch_ticker(symbol)
+	            if ticker:
+	                await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed! Current price: {ticker['last']}")
+	                return
+	        except ccxt.BadSymbol:
+	            await asyncio.sleep(SNIPING_DELAY)
+	        except Exception as e:
+	            await update.message.reply_text(f"⚠️ [WARNING] Sniping Error: {type(e).__name__}: {e}")
+	            await asyncio.sleep(5)
 
-async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, params):
-	    user_id = update.effective_user.id
-	    user_record = await get_user(user_id)
-	    
-	    api_key = user_record['api_key'] if user_record else None
-	    api_secret = user_record['api_secret'] if user_record else None
-	    
-	    if not api_key or not api_secret:
-	        await update.message.reply_text("🚨 [ERROR] لم يتم العثور على مفاتيح API الخاصة بك. يرجى إدخالها أولاً.")
-	        return
-	
-	    try:
-	        # Pass user_id to initialize_exchange to handle the OWNER_ID case
-	        exchange = initialize_exchange(user_id, api_key, api_secret)
-	    except ValueError as e:
-        await update.message.reply_text(f"🚨 [ERROR] خطأ في تهيئة الاتصال: {e}")
-        return
-        
-    symbol = params['symbol']
-    amount_usdt = params['amount']
-    profit_percent = params['profit_percent']
-    stop_loss_percent = params['stop_loss_percent']
-        
-    try:
-        await exchange.load_markets()
-        await update.message.reply_text("🔗 [INFO] Markets loaded successfully.")
-        await update.message.reply_text(f"🛒 [STEP 1/3] Placing Market Buy Order for {symbol} with cost {amount_usdt} USDT...")
-        
-        market_buy_order = await exchange.create_order(
+	async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, params):
+		    user_id = update.effective_user.id
+		    user_record = await get_user(user_id)
+		    api_key = user_record['api_key'] if user_record else None
+		    api_secret = user_record['api_secret']
+		    if not api_key or not api_secret:
+		        await update.message.reply_text("🚨 [ERROR] لم يتم العثور على مفاتيح API الخاصة بك. يرجى إدخالها أولاً.")
+		        return  
+		    try:
+		        # Pass user_id to initialize_exchange to handle the OWNER_ID case
+		        exchange = initialize_exchange(user_id, api_key, api_secret)
+		    except ValueError as e:
+		        await update.message.reply_text(f"🚨 [ERROR] خطأ في تهيئة الاتصال: {e}")
+		        return
+
+		    symbol = params['symbol']
+		    amount_usdt = params['amount']
+		    profit_percent = params['profit_percent']
+		    stop_loss_percent = params['stop_loss_percent']der = await exchange.create_order(
             symbol=symbol,
             type='market',
             side='buy',
