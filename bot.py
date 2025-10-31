@@ -49,7 +49,7 @@ SUBSCRIPTION_PRICE = "10$ شهرياً (BEP20)"
 SNIPING_DELAY = 0.03 # Check every 0.03 seconds for high-speed sniping
 
 # Conversation States
-AMOUNT, SYMBOL, PROFIT_PERCENT, USE_STOP_LOSS, STOP_LOSS_PERCENT = range(5)
+ORDER_TYPE, AMOUNT, SYMBOL, PROFIT_PERCENT, USE_STOP_LOSS, STOP_LOSS_PERCENT, LIMIT_PRICE = range(7)
 GRID_SYMBOL, LOWER_BOUND, UPPER_BOUND, NUM_GRIDS, AMOUNT_PER_ORDER, STOP_GRID_ID = range(5, 11)
 WAITING_FOR_SCREENSHOT = 50
 
@@ -512,6 +512,24 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                     f"متطلبات API: **قراءة، كتابة، تداول فوري، سحب**")
 
 async def trade_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the trade conversation by asking for the order type."""
+    
+    # Reset is_sniping flag
+    context.user_data['is_sniping'] = False
+    
+    keyboard = [
+        [InlineKeyboardButton("1. أمر السوق (Market)", callback_data='order_type_market')],
+        [InlineKeyboardButton("2. أمر محدد (Limit)", callback_data='order_type_limit')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "**📈 بدء التداول العادي**\n\n"
+        "يرجى اختيار نوع الأمر الذي تريد تنفيذه:",
+        reply_markup=reply_markup
+    )
+    
+    return ORDER_TYPE
     # Check subscription before starting conversation (now only checks if user exists)
     if not await check_subscription(update, context):
         return ConversationHandler.END
@@ -521,6 +539,16 @@ async def trade_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return AMOUNT
 
 async def sniping_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the sniping conversation."""
+    
+    # Set is_sniping flag
+    context.user_data['is_sniping'] = True
+    
+    # Sniping is always a Limit Order (or similar logic)
+    context.user_data['order_type'] = 'limit'
+    
+    await update.message.reply_text("1. 💵 أدخل المبلغ الذي تريد التداول به (بالدولار الأمريكي USDT):", reply_markup=ForceReply(selective=True))
+    return AMOUNT
     # Check subscription before starting conversation (now only checks if user exists)
     if not await check_subscription(update, context):
         return ConversationHandler.END
@@ -837,7 +865,7 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
         price_range = upper_bound - lower_bound
         grid_step = price_range / num_grids
         
-        grid_points = [lower_bound + i * grid_step for i in range(num_grids + 1)]
+        grid_points = [lower_bound + i * grid_step for i in range(int(num_grids) + 1)]
         
         # The grid will have 'num_grids' buy orders and 'num_grids' sell orders.
         # Buy orders are placed at the lower points, Sell orders at the higher points.
@@ -970,6 +998,38 @@ async def get_grid_id_to_stop(update: Update, context: ContextTypes.DEFAULT_TYPE
     return ConversationHandler.END
 
 
+async def get_order_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles the order type selection."""
+    query = update.callback_query
+    await query.answer()
+    
+    order_type = query.data.split('_')[-1]
+    context.user_data['order_type'] = order_type
+    
+    await query.edit_message_text(f"✅ تم اختيار: **أمر {order_type.capitalize()}**")
+    
+    if order_type == 'limit':
+        await query.message.reply_text("1. 💰 أدخل سعر التنفيذ المحدد (Limit Price):", reply_markup=ForceReply(selective=True))
+        return LIMIT_PRICE
+    else: # Market
+        await query.message.reply_text("1. 💵 أدخل المبلغ الذي تريد التداول به (بالدولار الأمريكي USDT):", reply_markup=ForceReply(selective=True))
+        return AMOUNT
+
+async def get_limit_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Gets the limit price for a limit order."""
+    try:
+        limit_price = float(update.message.text)
+        if limit_price <= 0:
+            await update.message.reply_text("❌ يجب أن يكون سعر التنفيذ رقماً موجباً.")
+            return LIMIT_PRICE
+            
+        context.user_data['limit_price'] = limit_price
+        await update.message.reply_text("2. 💵 أدخل المبلغ الذي تريد التداول به (بالدولار الأمريكي USDT):", reply_markup=ForceReply(selective=True))
+        return AMOUNT
+    except ValueError:
+        await update.message.reply_text("❌ إدخال غير صحيح. يرجى إدخال رقم.")
+        return LIMIT_PRICE
+
 async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         amount = float(update.message.text)
@@ -1086,7 +1146,7 @@ async def grid_monitoring_loop(application: Application):
                     # 1. Calculate Grid Points
                     price_range = upper_bound - lower_bound
                     grid_step = price_range / num_grids
-                    grid_points = [lower_bound + i * grid_step for i in range(num_grids + 1)]
+                    grid_points = [lower_bound + i * grid_step for i in range(int(num_grids) + 1)]
                     
                     # 2. Fetch Open Orders
                     open_orders = await exchange.fetch_open_orders(symbol)
@@ -1256,6 +1316,8 @@ def main() -> None:
     trade_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("trade", trade_start), CommandHandler("sniping", sniping_start)],
         states={
+            ORDER_TYPE: [CallbackQueryHandler(get_order_type, pattern='^order_type_')],
+            LIMIT_PRICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_limit_price)],
             AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_amount)],
             SYMBOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_symbol)],
             PROFIT_PERCENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_profit_percent)],
