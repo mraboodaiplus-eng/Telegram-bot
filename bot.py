@@ -154,8 +154,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         await update.message.reply_text(f"👍 [SUCCESS] Buy Order placed. ID: {market_buy_order['id']}")
         
         # --- STEP 2: Get Execution Details ---
-        await update.message.reply_text("🔍 [STEP 2/3] Waiting for execution details...")
-        await asyncio.sleep(2) 
+        # Removed asyncio.sleep(2) to speed up the process
+        await update.message.reply_text("🔍 [STEP 2/3] Getting execution details...")
         
         # Fetch order details and trades to get accurate filled amount and average price
         order_details = await exchange.fetch_order(market_buy_order['id'], symbol)
@@ -188,7 +188,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...")
         
         # Get precision for the symbol
-        try:
+        # Removed any potential sleep/delay here to ensure immediate execution
             exchange.load_markets()
             if symbol not in exchange.markets:
                 raise ccxt.BadSymbol(f"Symbol {symbol} is not available on {exchange.id}.")
