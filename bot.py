@@ -785,7 +785,7 @@ async def get_lower_bound(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         lower_bound = float(update.message.text)
         if lower_bound <= 0:
-            await update.message.reply_text("❌ يجب أن يكون الحد الأدنى للسعر رقماً موجباً.")
+            await update.message.reply_text("❌ يجب أن يكون الحد الأدنى للسعر رقماً موجباً (أكبر من صفر).")
             return LOWER_BOUND
             
         context.user_data['lower_bound'] = lower_bound
@@ -917,7 +917,10 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # We ensure price_precision is an integer before passing it to round()
             # Use quantize for Decimal rounding to ensure correct behavior, especially for small numbers
             # The precision is determined by the number of decimal places (price_precision)
-            quantizer = Decimal(10) ** (-int(price_precision))
+            # Use quantize for Decimal rounding to ensure correct behavior, especially for small numbers
+            # We must use the correct quantizer format which is '0.000...'
+            quantizer_str = '0.' + '0' * int(price_precision)
+            quantizer = Decimal(quantizer_str)
             buy_price = grid_points[i].quantize(quantizer)
             
             # Calculate amount in base currency (e.g., BTC)
@@ -931,7 +934,8 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # Round amount to exchange precision
             # We ensure amount_precision is an integer before passing it to round()
             # Use quantize for Decimal rounding
-            quantizer_amount = Decimal(10) ** (-int(amount_precision))
+            quantizer_amount_str = '0.' + '0' * int(amount_precision)
+            quantizer_amount = Decimal(quantizer_amount_str)
             buy_amount_base = buy_amount_base.quantize(quantizer_amount)
             
             # Convert Decimal back to float for ccxt (which expects float/string)
