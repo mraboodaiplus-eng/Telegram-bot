@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, Conversation
 
 # Assuming database.py is available and contains the required functions
 from database import init_db, get_user, add_new_user, update_api_keys, is_subscription_active, add_new_grid, get_active_grids, stop_grid, get_user_grids, get_grid_by_id
-from decimal import Decimal, getcontext
+from decimal import Decimal, ROUND_HALF_UP, getcontext
 # Set precision for Decimal calculations
 getcontext().prec = 28
 
@@ -27,7 +27,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 # --- NEW: Generalizing Exchange ---
 # The bot will now use the exchange ID specified here. User's API keys will be used for this exchange.
 # You can change this to 'binance', 'bybit', 'okx', etc.
-EXCHANGE_ID = os.environ.get("EXCHANGE_ID", "bingx")  # Default to bingx if not set
+EXCHANGE_ID = os.environ.get("EXCHANGE_ID")  # Exchange ID is now mandatory via environment variable
 
 # Owner's Information (Should be in environment variables for security, but keeping hardcoded as requested)
 OWNER_ID = 7281928709
@@ -927,7 +927,9 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 buy_price = grid_points[i].quantize(quantizer)
             else:
                 # If precision is 0, quantize to 1 (no decimal places)
-                buy_price = grid_points[i].quantize(Decimal('1'))
+                # Ensure the quantizer is based on the number of decimal places, not the value 1
+                # The correct quantizer for 0 decimal places is Decimal('1')
+                buy_price = grid_points[i].quantize(Decimal('1'), rounding=ROUND_HALF_UP)
             
             # Calculate amount in base currency (e.g., BTC)
             # amount_per_order is in quote currency (USDT)
@@ -946,6 +948,27 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 buy_amount_base = buy_amount_base.quantize(quantizer_amount)
             else:
                 buy_amount_base = buy_amount_base.quantize(Decimal('1'))
+            
+            # --- NEW: Check Minimum Order Amount ---
+            min_amount = Decimal(market['limits']['amount']['min']) if market['limits']['amount']['min'] is not None else Decimal('0')
+            
+            if buy_amount_base < min_amount:
+                await update.message.reply_text(
+                    f"⚠️ [WARNING] تم تخطي أمر الشراء عند {buy_price:.{int(price_precision)}f} لأن الكمية المحسوبة ({buy_amount_base:.{int(amount_precision)}f}) "
+                    f"أقل من الحد الأدنى لحجم الأمر للمنصة ({min_amount:.{int(amount_precision)}f}). يرجى زيادة مبلغ الأمر لكل شبكة."
+                )
+                continue # Skip placing this order
+            
+            # --- NEW: Check Minimum Notional Value (Total Order Value) ---
+            min_notional = Decimal(market['limits']['cost']['min']) if market['limits']['cost']['min'] is not None else Decimal('0')
+            order_notional = buy_amount_base * buy_price
+            
+            if order_notional < min_notional:
+                await update.message.reply_text(
+                    f"⚠️ [WARNING] تم تخطي أمر الشراء عند {buy_price:.{int(price_precision)}f} لأن القيمة الإجمالية للأمر ({order_notional:.2f} USDT) "
+                    f"أقل من الحد الأدنى للقيمة الإجمالية للمنصة ({min_notional:.2f} USDT). يرجى زيادة مبلغ الأمر لكل شبكة."
+                )
+                continue # Skip placing this order
             
             # Convert Decimal back to float for ccxt (which expects float/string)
             buy_price_float = float(buy_price)
