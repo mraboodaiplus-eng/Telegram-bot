@@ -234,6 +234,12 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     profit_percent = params['profit_percent']
     stop_loss_percent = params['stop_loss_percent']
     
+    # --- Symbol Formatting (Minimal) ---
+    # Ensure the symbol is in uppercase, as required by most exchanges
+    symbol = symbol.upper()
+    params['symbol'] = symbol
+    # --- End Symbol Formatting (Minimal) ---
+    
     try:
         # Determine the order type and price for the buy order
         order_type = 'limit' if params['order_type'] == 'limit' else 'market'
