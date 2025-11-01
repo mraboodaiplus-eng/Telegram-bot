@@ -1329,6 +1329,49 @@ async def get_stop_loss_percent(update: Update, context: ContextTypes.DEFAULT_TY
 
 # --- GRID MONITORING LOOP ---
 # --- New Grid Monitoring Logic ---
+# --- LANGUAGE SELECTION HANDLERS ---
+
+async def language_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the 'select_language' callback and presents language options."""
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = [
+        [InlineKeyboardButton("العربية 🇸🇦", callback_data='set_lang_ar')],
+        [InlineKeyboardButton("English 🇬🇧", callback_data='set_lang_en')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        "🌐 **اختر لغتك المفضلة / Select your preferred language:**",
+        reply_markup=reply_markup
+    )
+
+async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the language selection callback and updates the user's language in the database."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    callback_data = query.data
+    
+    if callback_data == 'set_lang_ar':
+        language_code = 'ar'
+        message_text = "✅ تم اختيار اللغة **العربية** كلغة مفضلة لك."
+    elif callback_data == 'set_lang_en':
+        language_code = 'en'
+        message_text = "✅ Language set to **English**."
+    else:
+        return # Should not happen
+
+    # Update the language in the database
+    from database import update_user_language
+    await update_user_language(user_id, language_code)
+
+    await query.edit_message_text(message_text)
+
+# --- END LANGUAGE SELECTION HANDLERS ---
+
 async def grid_monitoring_loop(application: Application):
     """Continuously monitors active grids and places new orders."""
     while True:
@@ -1634,45 +1677,4 @@ def home():
 if __name__ == "__main__":
     main()
 
-# --- LANGUAGE SELECTION HANDLERS ---
 
-async def language_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the 'select_language' callback and presents language options."""
-    query = update.callback_query
-    await query.answer()
-
-    keyboard = [
-        [InlineKeyboardButton("العربية 🇸🇦", callback_data='set_lang_ar')],
-        [InlineKeyboardButton("English 🇬🇧", callback_data='set_lang_en')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await query.edit_message_text(
-        "🌐 **اختر لغتك المفضلة / Select your preferred language:**",
-        reply_markup=reply_markup
-    )
-
-async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the language selection callback and updates the user's language in the database."""
-    query = update.callback_query
-    await query.answer()
-    
-    user_id = query.from_user.id
-    callback_data = query.data
-    
-    if callback_data == 'set_lang_ar':
-        language_code = 'ar'
-        message_text = "✅ تم اختيار اللغة **العربية** كلغة مفضلة لك."
-    elif callback_data == 'set_lang_en':
-        language_code = 'en'
-        message_text = "✅ Language set to **English**."
-    else:
-        return # Should not happen
-
-    # Update the language in the database
-    from database import update_user_language
-    await update_user_language(user_id, language_code)
-
-    await query.edit_message_text(message_text)
-
-# --- END LANGUAGE SELECTION HANDLERS ---
