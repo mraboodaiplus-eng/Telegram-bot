@@ -1511,7 +1511,7 @@ def main() -> None:
     )
      # API Setup Conversation
     api_setup_handler = ConversationHandler(
-        entry_point=CommandHandler("set_api", set_api_start),
+        entry_points=[CommandHandler("set_api", set_api_start)],
         states={
             SELECT_EXCHANGE: [CallbackQueryHandler(select_exchange_callback, pattern=r'^select_exchange_')],
             WAITING_FOR_API_KEY: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_api_key)],
