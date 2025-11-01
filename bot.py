@@ -896,6 +896,9 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         price_range = upper_bound - lower_bound
         # Ensure num_grids is Decimal for division
+        if num_grids == 0:
+            await update.message.reply_text(f"🚨 [ERROR] عدد خطوط الشبكة لا يمكن أن يكون صفرًا.")
+            return ConversationHandler.END
         grid_step = price_range / Decimal(num_grids)
         
         grid_points = []
@@ -916,6 +919,10 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
             # Calculate amount in base currency (e.g., BTC)
             # amount_per_order is in quote currency (USDT)
+            if buy_price == 0:
+                # This should not happen with valid inputs, but handle it defensively
+                await update.message.reply_text(f"🚨 [ERROR] محاولة القسمة على صفر: سعر الشراء هو صفر. يرجى التحقق من مدخلات النطاق.")
+                return ConversationHandler.END
             buy_amount_base = amount_per_order / buy_price
             
             # Round amount to exchange precision
