@@ -508,10 +508,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "/support - 🤝 مركز الدعم والمساعدة"
             )
         
-        await update.message.reply_text(welcome_message)
-        return
-        
-    # New Client Welcome Message (Bot is now free)
+	        # Add language selection button
+	        keyboard = [
+	            [InlineKeyboardButton("🌐 اختيار اللغة / Select Language", callback_data='select_language')]
+	        ]
+	        reply_markup = InlineKeyboardMarkup(keyboard)
+	        
+	        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
+	        return
+	        
+	    # New Client Welcome Message (Bot is now free)
     await update.message.reply_text(
         f"👋 مرحباً بك يا {username}!\n\n"
         f"أهلاً بك في خدمة **LiveSniperBot** المجانية والمتميزة.\n"
