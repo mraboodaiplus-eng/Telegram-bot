@@ -146,10 +146,12 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         
         if order_type == 'market':
             # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text(f"🛒 [STEP 1/3] Placing Market Buy Order for {amount_usdt} USDT...")
+            # await update.message.reply_text(f"🛒 [STEP 1/3] Placing Market Buy Order for {amount_usdt} USDT...")
+            pass
         else:
             # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text(f"🛒 [STEP 1/3] Placing Limit Buy Order at {order_price} for {amount_usdt} USDT...")
+            # await update.message.reply_text(f"🛒 [STEP 1/3] Placing Limit Buy Order at {order_price} for {amount_usdt} USDT...")
+            pass
 
         # Fixed Syntax Error: Corrected the line 105 error
         market_buy_order = await exchange.create_order(
