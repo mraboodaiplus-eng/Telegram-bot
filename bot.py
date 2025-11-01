@@ -915,7 +915,10 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # The precision value from ccxt is an integer (number of decimal places)
             # The round() function in Python takes an integer as the second argument
             # We ensure price_precision is an integer before passing it to round()
-            buy_price = round(grid_points[i], int(price_precision))
+            # Use quantize for Decimal rounding to ensure correct behavior, especially for small numbers
+            # The precision is determined by the number of decimal places (price_precision)
+            quantizer = Decimal(10) ** (-int(price_precision))
+            buy_price = grid_points[i].quantize(quantizer)
             
             # Calculate amount in base currency (e.g., BTC)
             # amount_per_order is in quote currency (USDT)
@@ -927,7 +930,9 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
             # Round amount to exchange precision
             # We ensure amount_precision is an integer before passing it to round()
-            buy_amount_base = round(buy_amount_base, int(amount_precision))
+            # Use quantize for Decimal rounding
+            quantizer_amount = Decimal(10) ** (-int(amount_precision))
+            buy_amount_base = buy_amount_base.quantize(quantizer_amount)
             
             # Convert Decimal back to float for ccxt (which expects float/string)
             buy_price_float = float(buy_price)
