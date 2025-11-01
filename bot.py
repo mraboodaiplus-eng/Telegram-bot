@@ -10,7 +10,7 @@ from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMar
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
 
 # Assuming database.py is available and contains the required functions
-from database import init_db, get_user, add_new_user, update_subscription_status, is_subscription_active, update_api_keys, setup_vip_api_keys
+from database import init_db, get_user, add_new_user, update_subscription_status, is_subscription_active, update_api_keys, setup_vip_api_keys, add_new_grid, get_active_grids, stop_grid, get_user_grids
 
 # Flask app instance
 app = Flask(__name__)
@@ -23,8 +23,8 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
 # --- NEW: Generalizing Exchange ---
 # The bot will now use the exchange ID specified here. User's API keys will be used for this exchange.
-# I will use 'binance' as a common default, but the user can change this to 'bingx', 'bybit', etc.
- 
+# You can change this to 'binance', 'bybit', 'okx', etc.
+EXCHANGE_ID = os.environ.get("EXCHANGE_ID", "bingx")  # Default to bingx if not set
 
 # Owner's Information (Should be in environment variables for security, but keeping hardcoded as requested)
 OWNER_ID = 7281928709
@@ -50,7 +50,7 @@ SNIPING_DELAY = 0.03 # Check every 0.03 seconds for high-speed sniping
 
 # Conversation States
 ORDER_TYPE, AMOUNT, SYMBOL, PROFIT_PERCENT, USE_STOP_LOSS, STOP_LOSS_PERCENT, LIMIT_PRICE = range(7)
-GRID_SYMBOL, LOWER_BOUND, UPPER_BOUND, NUM_GRIDS, AMOUNT_PER_ORDER, STOP_GRID_ID = range(5, 11)
+GRID_SYMBOL, LOWER_BOUND, UPPER_BOUND, NUM_GRIDS, AMOUNT_PER_ORDER, STOP_GRID_ID = range(7, 13)
 WAITING_FOR_SCREENSHOT = 50
 
 
@@ -59,8 +59,8 @@ WAITING_FOR_SCREENSHOT = 50
 def initialize_exchange(user_id, api_key, api_secret):
     """Initializes the ccxt exchange object with provided API keys and the global EXCHANGE_ID."""
     
-    # Get the exchange class from ccxt
-    exchange_class = ccxt.bingx
+    # Get the exchange class from ccxt dynamically based on EXCHANGE_ID
+    exchange_class = getattr(ccxt, EXCHANGE_ID)
     
     # Special case: If user is the OWNER, use the hardcoded keys
     # Special case: If user is the OWNER, use the hardcoded keys
@@ -98,14 +98,14 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
         try:
             ticker = await exchange.fetch_ticker(symbol)
             if ticker and ticker.get('last') is not None:
-                await update.message.reply_text(f"✅ [SUCCESS] {symbol} is now listed and tradable! Current price: {ticker['last']:.6f}")
-                return
+                # AVOID TELEGRAM MESSAGE DELAY: Only return, the main function will handle the success message
+            return
         except (ccxt.BadSymbol, ccxt.ExchangeError):
             # The symbol is not listed yet, wait and try again
             await asyncio.sleep(SNIPING_DELAY)
         except Exception as e:
             # Do not send repeated warning messages to the user. Log internally only.
-            # await update.message.reply_text(f"⚠️ [WARNING] Sniping Error: {type(e).__name__}: {e}")
+            # print(f"Sniping Error: {type(e).__name__}: {e}") # Log internally
             await asyncio.sleep(SNIPING_DELAY)
 
 async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, params):
@@ -145,9 +145,11 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         order_price = params.get('limit_price') if order_type == 'limit' else None
         
         if order_type == 'market':
-            await update.message.reply_text(f"🛒 [STEP 1/3] Placing Market Buy Order for {amount_usdt} USDT...")
+            # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+        # await update.message.reply_text(f"🛒 [STEP 1/3] Placing Market Buy Order for {amount_usdt} USDT...")
         else:
-            await update.message.reply_text(f"🛒 [STEP 1/3] Placing Limit Buy Order at {order_price} for {amount_usdt} USDT...")
+            # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+        # await update.message.reply_text(f"🛒 [STEP 1/3] Placing Limit Buy Order at {order_price} for {amount_usdt} USDT...")
 
         # Fixed Syntax Error: Corrected the line 105 error
         market_buy_order = await exchange.create_order(
@@ -159,11 +161,13 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             params={'cost': amount_usdt, 'createMarketBuyOrderRequiresPrice': False} # Use 'cost' parameter to specify amount in quote currency (USDT)
         )
         
-        await update.message.reply_text(f"👍 [SUCCESS] Buy Order placed. ID: {market_buy_order['id']}")
+        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+        # await update.message.reply_text(f"👍 [SUCCESS] Buy Order placed. ID: {market_buy_order['id']}")
         
         # --- STEP 2: Get Execution Details ---
         # Removed asyncio.sleep(2) to speed up the process
-        await update.message.reply_text("🔍 [STEP 2/3] Getting execution details...")
+        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+        # await update.message.reply_text("🔍 [STEP 2/3] Getting execution details...")
         
         # Fetch order details and trades to get accurate filled amount and average price
         order_details = await exchange.fetch_order(market_buy_order['id'], symbol)
@@ -189,16 +193,18 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             if not avg_price or not filled_amount:
                 raise ccxt.ExchangeError("Failed to get execution details.")
         
-        await update.message.reply_text(f"📊 [DETAILS] Avg Price: {avg_price:.6f}, Quantity: {filled_amount:.6f}")
+        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+        # await update.message.reply_text(f"📊 [DETAILS] Avg Price: {avg_price:.6f}, Quantity: {filled_amount:.6f}")
         
         # --- STEP 3: Take Profit Limit Sell ---
         target_sell_price = avg_price * (1 + profit_percent / 100)
-        await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...")
+        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+        # await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...")
         
         # Get precision for the symbol
         # Removed any potential sleep/delay here to ensure immediate execution
         try:
-            exchange.load_markets()
+            await exchange.load_markets()
             if symbol not in exchange.markets:
                 raise ccxt.BadSymbol(f"Symbol {symbol} is not available on {exchange.id}.")
                 
@@ -215,13 +221,15 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             filled_amount_precise = filled_amount
             
         limit_sell_order = await exchange.create_limit_sell_order(symbol, filled_amount_precise, target_sell_price)
-        await update.message.reply_text(f"📈 [SUCCESS] Take Profit Order placed. ID: {limit_sell_order['id']}")
+        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+        # await update.message.reply_text(f"📈 [SUCCESS] Take Profit Order placed. ID: {limit_sell_order['id']}")
         
         # --- OPTIONAL: Stop Loss Order ---
         stop_order = None
         if params['use_stop_loss']:
             stop_loss_price = avg_price * (1 - stop_loss_percent / 100)
-            await update.message.reply_text(f"🛡️ [OPTIONAL] Placing Stop Loss Order (-{stop_loss_percent}%) at {stop_loss_price:.6f}...")
+            # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+            # await update.message.reply_text(f"🛡️ [OPTIONAL] Placing Stop Loss Order (-{stop_loss_percent}%) at {stop_loss_price:.6f}...")
             
             # Note: Stop Market order creation can vary by exchange. Using a common pattern.
             stop_order = await exchange.create_order(
@@ -233,12 +241,14 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
                 params={'stopPrice': stop_loss_price}
             )
             
-            await update.message.reply_text(f"📉 [SUCCESS] Stop Loss Order placed. ID: {stop_order['id']}")
-            await update.message.reply_text("‼️ WARNING: TWO OPEN ORDERS ‼️\nManually cancel the other order if one executes. (Take Profit is Limit, Stop Loss is Market, Stop)")
+            # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+            # await update.message.reply_text(f"📉 [SUCCESS] Stop Loss Order placed. ID: {stop_order['id']}")
+            # await update.message.reply_text("‼️ WARNING: TWO OPEN ORDERS ‼️\nManually cancel the other order if one executes. (Take Profit is Limit, Stop Loss is Market, Stop)")
         
         # --- AUTOMATIC PROFIT SHARING LOGIC ---
         # Send the monitoring message ONCE
-        await update.message.reply_text("⏳ [MONITOR] جاري مراقبة أمر البيع (Take Profit) لتنفيذ الاقتطاع التلقائي...")
+        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+        # await update.message.reply_text("⏳ [MONITOR] جاري مراقبة أمر البيع (Take Profit) لتنفيذ الاقتطاع التلقائي...")
         
         order_id = limit_sell_order['id']
         
@@ -371,7 +381,7 @@ async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     # Initialize a temporary exchange object for sniping (no keys needed for fetching ticker)
     try:
-        exchange_class = ccxt.bingx
+        exchange_class = getattr(ccxt, EXCHANGE_ID)
         temp_exchange = exchange_class({'enableRateLimit': True})
     except Exception as e:
         await update.message.reply_text(f"🚨 [CRITICAL ERROR] Failed to initialize temporary exchange: {e}")
@@ -387,6 +397,8 @@ async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         await temp_exchange.close()
 
     # 2. Execute trade (This will initialize a new exchange with user's keys)
+    # AVOID TELEGRAM MESSAGE DELAY: Remove the success message here to gain a few milliseconds
+    # await update.message.reply_text(f"✅ [SUCCESS] {params['symbol']} is now listed! Proceeding to trade execution...")
     await execute_trade(update, context, params) 
 
 
