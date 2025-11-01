@@ -477,8 +477,15 @@ async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     await update.message.reply_text("⚡️ [SNIPING MODE] Starting Sniping process...")
     
     # Initialize a temporary exchange object for sniping (no keys needed for fetching ticker)
+    user_record = await get_user(update.effective_user.id)
+    exchange_id = user_record.get('exchange_id')
+    
+    if not exchange_id:
+        await update.message.reply_text("🚨 [ERROR] لم يتم اختيار منصة التداول. يرجى اختيارها أولاً باستخدام /set_api.")
+        return
+        
     try:
-        exchange_class = getattr(ccxt, EXCHANGE_ID)
+        exchange_class = getattr(ccxt, exchange_id)
         temp_exchange = exchange_class({'enableRateLimit': True})
     except Exception as e:
         await update.message.reply_text(f"🚨 [CRITICAL ERROR] Failed to initialize temporary exchange: {e}")
