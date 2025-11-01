@@ -261,8 +261,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             params={'cost': amount_usdt, 'createMarketBuyOrderRequiresPrice': False} # Use 'cost' parameter to specify amount in quote currency (USDT)
         )
         
-        # CRITICAL FIX: Check if the order response has the 'info' field before proceeding.
-        # The 'find' error might be coming from an internal ccxt method that expects 'info'
+        # CRITICAL FIX: Check if the order response is valid and has the 'info' field.
+        # The 'find' error is likely coming from an internal ccxt method that expects 'info'
         # to be present in the order response, but it's None for some exchanges/errors.
         if not market_buy_order or not market_buy_order.get('info'):
             raise ccxt.ExchangeError("Failed to place market buy order. Order response is incomplete or empty.")
@@ -276,7 +276,12 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         # await update.message.reply_text("🔍 [STEP 2/3] Getting execution details...")
         
         # Fetch order details and trades to get accurate filled amount and average price
-        order_details = await exchange.fetch_order(market_buy_order['id'], symbol)
+        # CRITICAL FIX: Ensure market_buy_order['id'] is not None before calling fetch_order
+        order_id = market_buy_order.get('id')
+        if not order_id:
+            raise ccxt.ExchangeError("Failed to get order ID from market buy order response.")
+            
+        order_details = await exchange.fetch_order(order_id, symbol)
         
         if order_details.get('status') not in ['closed', 'filled']:
             # Fallback to fetching trades if order status is not final
