@@ -99,7 +99,7 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
             ticker = await exchange.fetch_ticker(symbol)
             if ticker and ticker.get('last') is not None:
                 # AVOID TELEGRAM MESSAGE DELAY: Only return, the main function will handle the success message
-            return
+                return
         except (ccxt.BadSymbol, ccxt.ExchangeError):
             # The symbol is not listed yet, wait and try again
             await asyncio.sleep(SNIPING_DELAY)
