@@ -27,7 +27,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 # --- NEW: Generalizing Exchange ---
 # The bot will now use the exchange ID specified here. User's API keys will be used for this exchange.
 # You can change this to 'binance', 'bybit', 'okx', etc.
-EXCHANGE_ID = os.environ.get("EXCHANGE_ID")  # Exchange ID is now mandatory via environment variable
+EXCHANGE_ID = os.environ.get("EXCHANGE_ID", "bingx")  # Default to bingx if not set
 
 # Owner's Information (Should be in environment variables for security, but keeping hardcoded as requested)
 OWNER_ID = 7281928709
