@@ -527,6 +527,29 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "/status - ℹ️ عرض حالة البوت\n"
         "/support - 🤝 مركز الدعم والمساعدة"
     )
+    
+    # Add language selection button
+    keyboard = [
+        [InlineKeyboardButton("🌐 اختيار اللغة / Select Language", callback_data='select_language')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        f"👋 مرحباً بك يا {username}!\n\n"
+        f"أهلاً بك في خدمة **LiveSniperBot** المجانية والمتميزة.\n"
+        f"البوت يعمل على منصة تداول بنظام **اقتطاع الأرباح (10%)** على الصفقات الناجحة فقط.\n"
+        "للبدء، يرجى إعداد مفاتيح API الخاصة بك وتفعيل خيار **السحب**.\n\n"
+        "**الأوامر المتاحة:**\n"
+        "/trade - 📈 تداول عادي (شراء وبيع)\n"
+        "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
+        "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
+        "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
+        "/cancel - ❌ إلغاء العملية الحالية\n"
+        "/set_api - 🔑 إعداد مفاتيح API\n"
+        "/status - ℹ️ عرض حالة البوت\n"
+        "/support - 🤝 مركز الدعم والمساعدة",
+        reply_markup=reply_markup
+    )
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -1570,6 +1593,10 @@ def main() -> None:
     application.add_handler(subscription_conv_handler)
     # application.add_handler(api_key_conv_handler) # This line is a duplicate and uses the wrong name. The correct handler is api_setup_handler, which is already added on line 1522.
     
+    # Language Selection Handlers
+    application.add_handler(CallbackQueryHandler(language_callback_handler, pattern='^select_language$'))
+    application.add_handler(CallbackQueryHandler(set_language, pattern='^set_lang_'))
+    
     # === START KEEP-ALIVE WEB SERVER (Flask) ===
     # We run the Flask server in a separate thread to keep the Polling bot alive and satisfy Render's port requirement.
     import threading
@@ -1606,3 +1633,46 @@ def home():
 
 if __name__ == "__main__":
     main()
+
+# --- LANGUAGE SELECTION HANDLERS ---
+
+async def language_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the 'select_language' callback and presents language options."""
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = [
+        [InlineKeyboardButton("العربية 🇸🇦", callback_data='set_lang_ar')],
+        [InlineKeyboardButton("English 🇬🇧", callback_data='set_lang_en')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        "🌐 **اختر لغتك المفضلة / Select your preferred language:**",
+        reply_markup=reply_markup
+    )
+
+async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the language selection callback and updates the user's language in the database."""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = query.from_user.id
+    callback_data = query.data
+    
+    if callback_data == 'set_lang_ar':
+        language_code = 'ar'
+        message_text = "✅ تم اختيار اللغة **العربية** كلغة مفضلة لك."
+    elif callback_data == 'set_lang_en':
+        language_code = 'en'
+        message_text = "✅ Language set to **English**."
+    else:
+        return # Should not happen
+
+    # Update the language in the database
+    from database import update_user_language
+    await update_user_language(user_id, language_code)
+
+    await query.edit_message_text(message_text)
+
+# --- END LANGUAGE SELECTION HANDLERS ---
