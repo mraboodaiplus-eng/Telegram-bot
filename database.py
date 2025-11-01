@@ -16,7 +16,8 @@ async def init_db():
                 api_key TEXT NULL,
                 api_secret TEXT NULL,
                 subscription_status TEXT DEFAULT 'inactive',
-                subscription_end_date DATETIME NULL
+                subscription_end_date DATETIME NULL,
+                language TEXT DEFAULT 'ar'
             )
         """)
         await db.execute("""
@@ -47,7 +48,7 @@ async def add_new_user(user_id, user_type='client'):
     """Adds a new user to the database."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
         await db.execute(
-            "INSERT OR IGNORE INTO users (user_id, user_type) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO users (user_id, user_type, language) VALUES (?, ?, 'ar')",
             (user_id, user_type)
         )
         await db.commit()
@@ -73,8 +74,9 @@ async def update_api_keys(user_id, exchange_id, api_key, api_secret):
 async def setup_vip_api_keys(user_id, api_key, api_secret):
     """Sets up API keys for a VIP user, only if they are not already set."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
+        # Ensure user exists and has a default language
         await db.execute(
-            "INSERT OR IGNORE INTO users (user_id, api_key, api_secret) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO users (user_id, api_key, api_secret, language) VALUES (?, ?, ?, 'ar')",
             (user_id, api_key, api_secret)
         )
         await db.execute(
@@ -82,6 +84,16 @@ async def setup_vip_api_keys(user_id, api_key, api_secret):
             (api_key, api_secret, user_id)
         )
         await db.commit()
+
+async def update_user_language(user_id, language):
+    """Updates a user's preferred language."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE users SET language = ? WHERE user_id = ?",
+            (language, user_id)
+        )
+        await db.commit()
+
 
 def is_subscription_active(user_record):
     """Checks if the user's subscription is currently active."""
