@@ -13,7 +13,17 @@ from telegram.ext import Application, CommandHandler, ContextTypes, Conversation
 from database import init_db, get_user, add_new_user, update_api_keys, is_subscription_active, add_new_grid, get_active_grids, stop_grid, get_user_grids, get_grid_by_id
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 # Set precision for Decimal calculations
-getcontext().prec = 28
+getcontext.prec = 28
+
+# --- GENERAL HANDLERS ---
+async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancels and ends the conversation."""
+    await update.message.reply_text(
+        '❌ تم إلغاء العملية الحالية.', reply_markup=ReplyKeyboardRemove()
+    )
+    # Clear any temporary data
+    context.user_data.clear()
+    return ConversationHandler.END
 
 # Flask app instance
 app = Flask(__name__)
