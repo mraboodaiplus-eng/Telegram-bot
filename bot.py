@@ -234,20 +234,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     profit_percent = params['profit_percent']
     stop_loss_percent = params['stop_loss_percent']
     
-    # --- Symbol Formatting ---
-    # Ensure the symbol is in uppercase, as required by most exchanges
-    symbol = symbol.upper()
-    
-    # If the symbol does not contain a separator (e.g., 'OP' instead of 'OP/USDT'),
-    # assume the quote currency is USDT and format it.
-    if '/' not in symbol and not symbol.endswith('USDT'):
-        symbol = f"{symbol}/USDT"
-    elif '/' not in symbol and symbol.endswith('USDT'):
-        # Handle cases like 'OPUSDT' by inserting '/'
-        symbol = f"{symbol[:-4]}/{symbol[-4:]}"
-        
-    params['symbol'] = symbol
-    # --- End Symbol Formatting ---
+    # The symbol is already formatted by the calling function (sniping_and_trade or trade_start).
+    symbol = params['symbol']
     
     try:
         # Determine the order type and price for the buy order
@@ -272,6 +260,12 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             price=order_price, # Only used for limit order
             params={'cost': amount_usdt, 'createMarketBuyOrderRequiresPrice': False} # Use 'cost' parameter to specify amount in quote currency (USDT)
         )
+        
+        # CRITICAL FIX: Check if the order response has the 'info' field before proceeding.
+        # The 'find' error might be coming from an internal ccxt method that expects 'info'
+        # to be present in the order response, but it's None for some exchanges/errors.
+        if not market_buy_order or not market_buy_order.get('info'):
+            raise ccxt.ExchangeError("Failed to place market buy order. Order response is incomplete or empty.")
         
         # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
         # await update.message.reply_text(f"👍 [SUCCESS] Buy Order placed. ID: {market_buy_order['id']}")
@@ -411,7 +405,11 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     except ccxt.NetworkError as e:
         await update.message.reply_text(f"🚨 [NETWORK ERROR] {type(e).__name__}: {e}")
     except Exception as e:
-        await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}")
+        # Check if the error is the specific AttributeError
+        if "AttributeError: 'NoneType' object has no attribute 'find'" in str(e):
+            await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}\n\n**ملاحظة:** قد يكون هذا الخطأ ناتجًا عن فشل المنصة في إرجاع تفاصيل الأمر بشكل صحيح. يرجى التأكد من أن الرمز المدخل صحيح وأن مفاتيح API لديها صلاحية التداول.")
+        else:
+            await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}")
     finally:
         if 'exchange' in locals():
             await exchange.close()
@@ -514,6 +512,21 @@ async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     
     # 1. Wait for listing (Sniping)
     try:
+        # The wait_for_listing function will ensure the symbol is tradable.
+        # We need to ensure the symbol is correctly formatted before passing it to wait_for_listing.
+        # The symbol formatting logic is inside execute_trade, which is called *after* sniping.
+        # We need to move the symbol formatting logic to be *before* the sniping process.
+        
+        # --- Symbol Formatting (Moved from execute_trade) ---
+        symbol = params['symbol'].upper()
+        if '/' not in symbol and not symbol.endswith('USDT'):
+            symbol = f"{symbol}/USDT"
+        elif '/' not in symbol and symbol.endswith('USDT'):
+            symbol = f"{symbol[:-4]}/{symbol[-4:]}"
+            
+        params['symbol'] = symbol
+        # --- End Symbol Formatting ---
+        
         await wait_for_listing(update, context, temp_exchange, params['symbol'])
     except Exception as e:
         await update.message.reply_text(f"🚨 [CRITICAL ERROR] Failed during sniping wait: {e}")
