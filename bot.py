@@ -909,14 +909,18 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # We need num_grids buy orders, placed at grid_points[0] to grid_points[num_grids-1]
         for i in range(num_grids):
             # Round price to exchange precision
-            buy_price = round(grid_points[i], price_precision)
+            # The precision value from ccxt is an integer (number of decimal places)
+            # The round() function in Python takes an integer as the second argument
+            # We ensure price_precision is an integer before passing it to round()
+            buy_price = round(grid_points[i], int(price_precision))
             
             # Calculate amount in base currency (e.g., BTC)
             # amount_per_order is in quote currency (USDT)
             buy_amount_base = amount_per_order / buy_price
             
             # Round amount to exchange precision
-            buy_amount_base = round(buy_amount_base, amount_precision)
+            # We ensure amount_precision is an integer before passing it to round()
+            buy_amount_base = round(buy_amount_base, int(amount_precision))
             
             # Convert Decimal back to float for ccxt (which expects float/string)
             buy_price_float = float(buy_price)
