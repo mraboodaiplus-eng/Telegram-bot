@@ -885,8 +885,9 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
             
         market = exchange.markets[symbol]
-        price_precision = market['precision']['price']
-        amount_precision = market['precision']['amount']
+		                    # Ensure precision is a non-negative integer
+		                    price_precision = max(0, int(market['precision']['price']))
+		                    amount_precision = max(0, int(market['precision']['amount']))
         
     except Exception as e:
         await update.message.reply_text(f"🚨 [ERROR] فشل تهيئة الاتصال بالمنصة أو جلب معلومات السوق: {type(e).__name__}: {e}")
@@ -919,9 +920,14 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # The precision is determined by the number of decimal places (price_precision)
             # Use quantize for Decimal rounding to ensure correct behavior, especially for small numbers
             # We must use the correct quantizer format which is '0.000...'
-            quantizer_str = '0.' + '0' * int(price_precision)
-            quantizer = Decimal(quantizer_str)
-            buy_price = grid_points[i].quantize(quantizer)
+            # Handle case where price_precision is 0 (e.g., for BTC/USDT on some exchanges)
+            if price_precision > 0:
+                quantizer_str = '0.' + '0' * price_precision
+                quantizer = Decimal(quantizer_str)
+                buy_price = grid_points[i].quantize(quantizer)
+            else:
+                # If precision is 0, quantize to 1 (no decimal places)
+                buy_price = grid_points[i].quantize(Decimal('1'))
             
             # Calculate amount in base currency (e.g., BTC)
             # amount_per_order is in quote currency (USDT)
@@ -934,9 +940,12 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # Round amount to exchange precision
             # We ensure amount_precision is an integer before passing it to round()
             # Use quantize for Decimal rounding
-            quantizer_amount_str = '0.' + '0' * int(amount_precision)
-            quantizer_amount = Decimal(quantizer_amount_str)
-            buy_amount_base = buy_amount_base.quantize(quantizer_amount)
+            if amount_precision > 0:
+                quantizer_amount_str = '0.' + '0' * amount_precision
+                quantizer_amount = Decimal(quantizer_amount_str)
+                buy_amount_base = buy_amount_base.quantize(quantizer_amount)
+            else:
+                buy_amount_base = buy_amount_base.quantize(Decimal('1'))
             
             # Convert Decimal back to float for ccxt (which expects float/string)
             buy_price_float = float(buy_price)
@@ -945,7 +954,7 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             try:
                 order = await exchange.create_limit_buy_order(symbol, buy_amount_float, buy_price_float)
                 placed_orders.append(order)
-                await update.message.reply_text(f"🛒 [BUY] أمر شراء محدد عند: {buy_price_float:.{price_precision}f} بكمية: {buy_amount_float:.{amount_precision}f}")
+                await update.message.reply_text(f"🛒 [BUY] أمر شراء محدد عند: {buy_price_float:.{int(price_precision)}f} بكمية: {buy_amount_float:.{int(amount_precision)}f}")
             except Exception as e:
                 await update.message.reply_text(f"⚠️ [WARNING] فشل وضع أمر الشراء عند {buy_price_float}: {e}")
                 
