@@ -9,6 +9,82 @@ import time # Added for use in execute_trade
 from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
 
+# --- I18N (Internationalization) MESSAGES ---
+MESSAGES = {
+    'ar': {
+        'cancel_success': '❌ تم إلغاء العملية الحالية.',
+        'welcome_vip_owner': '👑 **تحية الإجلال، سيدي المدير العام** ({username}) 👑\n\nجميع الأنظمة والعمليات تحت إمرتكم المباشرة. الصلاحيات العليا مفعلة بالكامل.\n**الأوامر السيادية المتاحة:**',
+        'welcome_vip_abood': 'تم التحقق. أهلاً بك، سيد 👑Abood👑. تم تفعيل بروتوكول المؤسس V.I.P الخاص بك.\nجميع الأنظمة تحت سيطرتك الآن، مع وصول كامل ومجاني لجميع الميزات الحالية والمستقبلية.البوت في خدمة سيادتكم.\n\n**الأوامر التنفيذية المتاحة:**',
+        'welcome_vip_other': '👋 مرحباً بك يا {username} (المستخدم المميز)!\n**الأوامر المتاحة:**',
+        'welcome_client': '👋 مرحباً بك يا {username}!\n\nأهلاً بك في خدمة **LiveSniperBot** المجانية والمتميزة.\nالبوت يعمل على منصة تداول بنظام **اقتطاع الأرباح (10%)** على الصفقات الناجحة فقط.\nللبدء، يرجى إعداد مفاتيح API الخاصة بك وتفعيل خيار **السحب**.\n\n**الأوامر المتاحة:**',
+        'cmd_trade': '/trade - 📈 تداول عادي (شراء وبيع)',
+        'cmd_sniping': '/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)',
+        'cmd_grid_trade': '/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)',
+        'cmd_stop_grid': '/stop_grid - 🛑 إيقاف الشبكة الآلية',
+        'cmd_cancel': '/cancel - ❌ إلغاء العملية الحالية',
+        'cmd_set_api': '/set_api - 🔑 إعداد مفاتيح API',
+        'cmd_status_bot': '/status - ℹ️ عرض حالة البوت',
+        'cmd_status_sub': '/status - ℹ️ عرض حالة الاشتراك',
+        'cmd_support': '/support - 🤝 مركز الدعم والمساعدة',
+        'trade_start_title': '**📈 بدء التداول العادي**\n\nيرجى اختيار نوع الأمر الذي تريد تنفيذه:',
+        'trade_market_btn': '1. أمر السوق (Market)',
+        'trade_limit_btn': '2. أمر محدد (Limit)',
+        'lang_select_title': '🌐 **اختر لغتك المفضلة / Select your preferred language:**',
+        'lang_ar_btn': 'العربية 🇸🇦',
+        'lang_en_btn': 'English 🇬🇧',
+        'lang_set_ar': '✅ تم اختيار اللغة **العربية** كلغة مفضلة لك.',
+        'lang_set_en': '✅ Language set to **English**.',
+    },
+    'en': {
+        'cancel_success': '❌ Current operation has been cancelled.',
+        'welcome_vip_owner': '👑 **Greetings, General Manager** ({username}) 👑\n\nAll systems and operations are under your direct command. Full supreme authorities are enabled.\n**Available Sovereign Commands:**',
+        'welcome_vip_abood': 'Verified. Welcome, Lord 👑Abood👑. Your Founder V.I.P protocol is activated.\nAll systems are under your control now, with full and free access to all current and future features. The bot is at your service.\n\n**Available Executive Commands:**',
+        'welcome_vip_other': '👋 Welcome {username} (Premium User)!\n**Available Commands:**',
+        'welcome_client': '👋 Welcome {username}!\n\nWelcome to the free and premium **LiveSniperBot** service.\nThe bot operates on a trading platform with a **profit sharing (10%)** system on successful trades only.\nTo start, please set up your API keys and enable the **Withdrawal** option.\n\n**Available Commands:**',
+        'cmd_trade': '/trade - 📈 Normal Trade (Buy and Sell)',
+        'cmd_sniping': '/sniping - ⚡️ Sniping a New Coin (Waiting for Listing)',
+        'cmd_grid_trade': '/grid_trade - 📊 Start Grid Trading (Automated Grid)',
+        'cmd_stop_grid': '/stop_grid - 🛑 Stop Automated Grid',
+        'cmd_cancel': '/cancel - ❌ Cancel Current Operation',
+        'cmd_set_api': '/set_api - 🔑 Setup API Keys',
+        'cmd_status_bot': '/status - ℹ️ Show Bot Status',
+        'cmd_status_sub': '/status - ℹ️ Show Subscription Status',
+        'cmd_support': '/support - 🤝 Support and Help Center',
+        'trade_start_title': '**📈 Start Normal Trading**\n\nPlease choose the order type you want to execute:',
+        'trade_market_btn': '1. Market Order',
+        'trade_limit_btn': '2. Limit Order',
+        'lang_select_title': '🌐 **اختر لغتك المفضلة / Select your preferred language:**',
+        'lang_ar_btn': 'العربية 🇸🇦',
+        'lang_en_btn': 'English 🇬🇧',
+        'lang_set_ar': '✅ تم اختيار اللغة **العربية** كلغة مفضلة لك.',
+        'lang_set_en': '✅ Language set to **English**.',
+    }
+}
+
+async def get_user_language(user_id):
+    """Fetches the user's preferred language from the database."""
+    user_record = await get_user(user_id)
+    return user_record.get('language', 'ar') if user_record else 'ar'
+
+def get_text(user_id, key, **kwargs):
+    """Retrieves the localized text for a given key."""
+    # This is a synchronous function, so we cannot use await here.
+    # We will use a temporary solution for now, and fix it later if needed.
+    # For now, we will assume 'ar' if user_id is not provided or fails.
+    
+    # Since get_user is async, we will pass the language code directly 
+    # from the calling async function, or default to 'ar'.
+    
+    # For simplicity in this synchronous helper, we will assume 'ar' as default
+    # and rely on the calling function to pass the correct language.
+    
+    lang = kwargs.pop('lang', 'ar')
+    
+    text = MESSAGES.get(lang, MESSAGES['ar']).get(key, f"MISSING_TEXT[{key}]")
+    return text.format(**kwargs)
+
+# --- END I18N (Internationalization) MESSAGES ---
+
 # Assuming database.py is available and contains the required functions
 from database import init_db, get_user, add_new_user, update_api_keys, is_subscription_active, add_new_grid, get_active_grids, stop_grid, get_user_grids, get_grid_by_id
 from decimal import Decimal, ROUND_HALF_UP, getcontext
@@ -463,54 +539,37 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     
     await add_new_user(user_id)
     
+    lang = await get_user_language(user_id)
+    
     # Auto-setup VIP API Keys for ABOOD (Removed as per user request)
         
+    # Define common commands list
+    commands = [
+        get_text(user_id, 'cmd_trade', lang=lang),
+        get_text(user_id, 'cmd_sniping', lang=lang),
+        get_text(user_id, 'cmd_grid_trade', lang=lang),
+        get_text(user_id, 'cmd_stop_grid', lang=lang),
+        get_text(user_id, 'cmd_cancel', lang=lang),
+        get_text(user_id, 'cmd_set_api', lang=lang),
+        get_text(user_id, 'cmd_support', lang=lang),
+    ]
+    
     if user_id in WHITELISTED_USERS:
         if user_id == OWNER_ID:
-            welcome_message = (
-                f"👑 **تحية الإجلال، سيدي المدير العام** ({username}) 👑\n\n"
-                "جميع الأنظمة والعمليات تحت إمرتكم المباشرة. الصلاحيات العليا مفعلة بالكامل.\n"
-                "**الأوامر السيادية المتاحة:**\n"
-                "/trade - 📈 تداول عادي (شراء وبيع)\n"
-                "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-                "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
-                "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
-                "/cancel - ❌ إلغاء العملية الحالية\n"
-                "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة البوت\n"
-                "/support - 🤝 مركز الدعم والمساعدة"
-            )
+            welcome_message = get_text(user_id, 'welcome_vip_owner', lang=lang, username=username)
+            commands.append(get_text(user_id, 'cmd_status_bot', lang=lang))
         elif user_id == ABOOD_ID:
-            welcome_message = (
-                f"تم التحقق. أهلاً بك، سيد 👑Abood👑. تم تفعيل بروتوكول المؤسس V.I.P الخاص بك.\n"
-                "جميع الأنظمة تحت سيطرتك الآن، مع وصول كامل ومجاني لجميع الميزات الحالية والمستقبلية.البوت في خدمة سيادتكم.\n\n"
-                "**الأوامر التنفيذية المتاحة:**\n"
-                "/trade - 📈 تداول عادي (شراء وبيع)\n"
-                "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-                "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
-                "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
-                "/cancel - ❌ إلغاء العملية الحالية\n"
-                "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة البوت\n"
-                "/support - 🤝 مركز الدعم والمساعدة"
-            )
+            welcome_message = get_text(user_id, 'welcome_vip_abood', lang=lang)
+            commands.append(get_text(user_id, 'cmd_status_bot', lang=lang))
         else:
-            welcome_message = (
-                f"👋 مرحباً بك يا {username} (المستخدم المميز)!\n"
-                "**الأوامر المتاحة:**\n"
-                "/trade - 📈 تداول عادي (شراء وبيع)\n"
-                "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-                "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
-                "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
-                "/cancel - ❌ إلغاء العملية الحالية\n"
-                "/set_api - 🔑 إعداد مفاتيح API\n"
-                "/status - ℹ️ عرض حالة الاشتراك\n"
-                "/support - 🤝 مركز الدعم والمساعدة"
-            )
+            welcome_message = get_text(user_id, 'welcome_vip_other', lang=lang, username=username)
+            commands.append(get_text(user_id, 'cmd_status_sub', lang=lang))
+        
+        welcome_message += "\n" + "\n".join(commands)
         
         # Add language selection button
         keyboard = [
-            [InlineKeyboardButton("🌐 اختيار اللغة / Select Language", callback_data='select_language')]
+            [InlineKeyboardButton(get_text(user_id, 'lang_select_title', lang=lang), callback_data='select_language')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -518,42 +577,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
         
     # New Client Welcome Message (Bot is now free)
-    await update.message.reply_text(
-        f"👋 مرحباً بك يا {username}!\n\n"
-        f"أهلاً بك في خدمة **LiveSniperBot** المجانية والمتميزة.\n"
-        f"البوت يعمل على منصة تداول بنظام **اقتطاع الأرباح (10%)** على الصفقات الناجحة فقط.\n"
-        "للبدء، يرجى إعداد مفاتيح API الخاصة بك وتفعيل خيار **السحب**.\n\n"
-        "**الأوامر المتاحة:**\n"
-        "/trade - 📈 تداول عادي (شراء وبيع)\n"
-        "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-        "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
-        "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
-        "/cancel - ❌ إلغاء العملية الحالية\n"
-        "/set_api - 🔑 إعداد مفاتيح API\n"
-        "/status - ℹ️ عرض حالة البوت\n"
-        "/support - 🤝 مركز الدعم والمساعدة"
-    )
+    welcome_message = get_text(user_id, 'welcome_client', lang=lang, username=username)
+    commands.append(get_text(user_id, 'cmd_status_bot', lang=lang))
+    welcome_message += "\n" + "\n".join(commands)
     
     # Add language selection button
     keyboard = [
-        [InlineKeyboardButton("🌐 اختيار اللغة / Select Language", callback_data='select_language')]
+        [InlineKeyboardButton(get_text(user_id, 'lang_select_title', lang=lang), callback_data='select_language')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        f"👋 مرحباً بك يا {username}!\n\n"
-        f"أهلاً بك في خدمة **LiveSniperBot** المجانية والمتميزة.\n"
-        f"البوت يعمل على منصة تداول بنظام **اقتطاع الأرباح (10%)** على الصفقات الناجحة فقط.\n"
-        "للبدء، يرجى إعداد مفاتيح API الخاصة بك وتفعيل خيار **السحب**.\n\n"
-        "**الأوامر المتاحة:**\n"
-        "/trade - 📈 تداول عادي (شراء وبيع)\n"
-        "/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)\n"
-        "/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)\n"
-        "/stop_grid - 🛑 إيقاف الشبكة الآلية\n"
-        "/cancel - ❌ إلغاء العملية الحالية\n"
-        "/set_api - 🔑 إعداد مفاتيح API\n"
-        "/status - ℹ️ عرض حالة البوت\n"
-        "/support - 🤝 مركز الدعم والمساعدة",
+        welcome_message,
         reply_markup=reply_markup
     )
 
@@ -583,18 +618,20 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def trade_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the trade conversation by asking for the order type."""
     
+    user_id = update.effective_user.id
+    lang = await get_user_language(user_id)
+    
     # Reset is_sniping flag
     context.user_data['is_sniping'] = False
     
     keyboard = [
-        [InlineKeyboardButton("1. أمر السوق (Market)", callback_data='order_type_market')],
-        [InlineKeyboardButton("2. أمر محدد (Limit)", callback_data='order_type_limit')],
+        [InlineKeyboardButton(get_text(user_id, 'trade_market_btn', lang=lang), callback_data='order_type_market')],
+        [InlineKeyboardButton(get_text(user_id, 'trade_limit_btn', lang=lang), callback_data='order_type_limit')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        "**📈 بدء التداول العادي**\n\n"
-        "يرجى اختيار نوع الأمر الذي تريد تنفيذه:",
+        get_text(user_id, 'trade_start_title', lang=lang),
         reply_markup=reply_markup
     )
     
