@@ -10,7 +10,7 @@ from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMar
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
 
 # Assuming database.py is available and contains the required functions
-from database import init_db, get_user, add_new_user, update_api_keys, is_subscription_active, get_user_by_api_key, add_new_grid, get_active_grids, stop_grid, get_user_grids, get_grid_by_id
+from database import init_db, get_user, add_new_user, update_api_keys, is_subscription_active, add_new_grid, get_active_grids, stop_grid, get_user_grids, get_grid_by_id
 from decimal import Decimal, getcontext
 # Set precision for Decimal calculations
 getcontext().prec = 28
@@ -594,6 +594,8 @@ async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return 2 # State for API Secret
 
 async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    from database import get_user_by_api_key # Local import to fix the recurring issue
+    
     api_secret = update.message.text.strip()
     api_key = context.user_data['temp_api_key']
     user_id = update.effective_user.id
