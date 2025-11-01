@@ -872,7 +872,7 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # 2. Calculate Grid Points
     try:
         price_range = upper_bound - lower_bound
-        grid_step = price_range / num_grids
+        grid_step = price_range / int(num_grids)
         
         grid_points = [lower_bound + i * grid_step for i in range(int(num_grids) + 1)]
         
@@ -1154,7 +1154,7 @@ async def grid_monitoring_loop(application: Application):
                     
                     # 1. Calculate Grid Points
                     price_range = upper_bound - lower_bound
-                    grid_step = price_range / num_grids
+                    grid_step = price_range / int(num_grids)
                     grid_points = [lower_bound + i * grid_step for i in range(int(num_grids) + 1)]
                     
                     # 2. Fetch Open Orders
