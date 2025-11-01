@@ -152,3 +152,11 @@ async def get_grid_by_id(grid_id):
         cursor = await db.execute("SELECT * FROM grids WHERE id = ?", (grid_id,))
         grid = await cursor.fetchone()
         return dict(grid) if grid else None
+
+async def get_user_by_api_key(api_key):
+    """Fetches a user's record by their API key."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM users WHERE api_key = ?", (api_key,))
+        user = await cursor.fetchone()
+        return dict(user) if user else None
