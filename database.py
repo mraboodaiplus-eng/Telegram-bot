@@ -12,6 +12,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 user_type TEXT DEFAULT 'client',
+                exchange_id TEXT NULL,
                 api_key TEXT NULL,
                 api_secret TEXT NULL,
                 subscription_status TEXT DEFAULT 'inactive',
@@ -60,12 +61,12 @@ async def update_subscription_status(user_id, status, end_date=None):
         )
         await db.commit()
 
-async def update_api_keys(user_id, api_key, api_secret):
-    """Updates a user's API keys."""
+async def update_api_keys(user_id, exchange_id, api_key, api_secret):
+    """Updates a user's API keys and exchange ID."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
         await db.execute(
-            "UPDATE users SET api_key = ?, api_secret = ? WHERE user_id = ?",
-            (api_key, api_secret, user_id)
+            "UPDATE users SET exchange_id = ?, api_key = ?, api_secret = ? WHERE user_id = ?",
+            (exchange_id, api_key, api_secret, user_id)
         )
         await db.commit()
 
