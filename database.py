@@ -144,3 +144,11 @@ async def get_user_grids(user_id):
         cursor = await db.execute("SELECT * FROM grids WHERE user_id = ?", (user_id,))
         grids = await cursor.fetchall()
         return [dict(grid) for grid in grids]
+
+async def get_grid_by_id(grid_id):
+    """Fetches a specific grid trading configuration by its ID."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM grids WHERE id = ?", (grid_id,))
+        grid = await cursor.fetchone()
+        return dict(grid) if grid else None
