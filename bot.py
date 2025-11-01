@@ -234,11 +234,20 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     profit_percent = params['profit_percent']
     stop_loss_percent = params['stop_loss_percent']
     
-    # --- Symbol Formatting (Minimal) ---
+    # --- Symbol Formatting ---
     # Ensure the symbol is in uppercase, as required by most exchanges
     symbol = symbol.upper()
+    
+    # If the symbol does not contain a separator (e.g., 'OP' instead of 'OP/USDT'),
+    # assume the quote currency is USDT and format it.
+    if '/' not in symbol and not symbol.endswith('USDT'):
+        symbol = f"{symbol}/USDT"
+    elif '/' not in symbol and symbol.endswith('USDT'):
+        # Handle cases like 'OPUSDT' by inserting '/'
+        symbol = f"{symbol[:-4]}/{symbol[-4:]}"
+        
     params['symbol'] = symbol
-    # --- End Symbol Formatting (Minimal) ---
+    # --- End Symbol Formatting ---
     
     try:
         # Determine the order type and price for the buy order
@@ -299,31 +308,37 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
         # await update.message.reply_text(f"📊 [DETAILS] Avg Price: {avg_price:.6f}, Quantity: {filled_amount:.6f}")
         
-        # --- STEP 3: Take Profit Limit Sell ---
-        target_sell_price = avg_price * (1 + profit_percent / 100)
-        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...")
-        
-        # Get precision for the symbol
-        # Removed any potential sleep/delay here to ensure immediate execution
-        try:
-            await exchange.load_markets()
-            if symbol not in exchange.markets:
-                raise ccxt.BadSymbol(f"Symbol {symbol} is not available on {exchange.id}.")
-                
-            market = exchange.markets[symbol]
-            # Ensure amount is rounded to the correct precision
-            precision = market['precision']['amount']
-            
-            import math
-            # Round down the filled amount to the exchange's precision
-            filled_amount_precise = math.floor(filled_amount * (10**precision)) / (10**precision)
-            
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ [WARNING] Failed to get market info/precision: {e}. Using raw filled amount.")
-            filled_amount_precise = filled_amount
-            
-        limit_sell_order = await exchange.create_limit_sell_order(symbol, filled_amount_precise, target_sell_price)
+	        # --- STEP 3: Take Profit Limit Sell ---
+	        target_sell_price = avg_price * (1 + profit_percent / 100)
+	        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
+	        # await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...")
+	        
+	        # Get precision for the symbol
+	        # Removed any potential sleep/delay here to ensure immediate execution
+	        try:
+	            await exchange.load_markets()
+	            
+	            # The symbol might not be in the markets list if it was just listed, 
+	            # but we need the market info for precision. We will try to get it.
+	            market = exchange.markets.get(symbol)
+	            
+	            if not market:
+	                # If market info is None, it means the symbol is not recognized by the exchange yet,
+	                # which is a critical issue for setting precision.
+	                raise ccxt.BadSymbol(f"Symbol {symbol} market info is not available on {exchange.id}. Cannot set precision.")
+	                
+	            # Ensure amount is rounded to the correct precision
+	            precision = market['precision']['amount']
+	            
+	            import math
+	            # Round down the filled amount to the correct precision
+	            filled_amount_precise = math.floor(filled_amount * (10**precision)) / (10**precision)
+	            
+	        except Exception as e:
+	            await update.message.reply_text(f"⚠️ [WARNING] Failed to get market info/precision: {e}. Using raw filled amount.")
+	            filled_amount_precise = filled_amount
+	            
+	        limit_sell_order = await exchange.create_limit_sell_order(symbol, filled_amount_precise, target_sell_price)
         # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
         # await update.message.reply_text(f"📈 [SUCCESS] Take Profit Order placed. ID: {limit_sell_order['id']}")
         
