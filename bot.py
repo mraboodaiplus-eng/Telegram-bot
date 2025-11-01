@@ -1568,7 +1568,7 @@ def main() -> None:
     application.add_handler(grid_conv_handler)
     application.add_handler(trade_conv_handler)
     application.add_handler(subscription_conv_handler)
-    application.add_handler(api_key_conv_handler)
+    # application.add_handler(api_key_conv_handler) # This line is a duplicate and uses the wrong name. The correct handler is api_setup_handler, which is already added on line 1522.
     
     # === START KEEP-ALIVE WEB SERVER (Flask) ===
     # We run the Flask server in a separate thread to keep the Polling bot alive and satisfy Render's port requirement.
