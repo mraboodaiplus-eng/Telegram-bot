@@ -885,9 +885,9 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
             
         market = exchange.markets[symbol]
-		                    # Ensure precision is a non-negative integer
-		                    price_precision = max(0, int(market['precision']['price']))
-		                    amount_precision = max(0, int(market['precision']['amount']))
+        # Ensure precision is a non-negative integer
+        price_precision = max(0, int(market['precision']['price']))
+        amount_precision = max(0, int(market['precision']['amount']))
         
     except Exception as e:
         await update.message.reply_text(f"🚨 [ERROR] فشل تهيئة الاتصال بالمنصة أو جلب معلومات السوق: {type(e).__name__}: {e}")
