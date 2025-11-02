@@ -238,21 +238,17 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     # The symbol is already formatted by the calling function (sniping_and_trade or trade_start).
     symbol = params['symbol']
     
-    try:
-        # Determine the order type and price for the buy order
+        # --- NEW: Place Buy Order and Get Execution Details (Optimized for Sniping) ---
+        
+        # 1. Place Market Buy Order
         order_type = 'limit' if params['order_type'] == 'limit' else 'market'
         order_price = params.get('limit_price') if order_type == 'limit' else None
         
-        if order_type == 'market':
-            # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-            # await update.message.reply_text(f"🛒 [STEP 1/3] Placing Market Buy Order for {amount_usdt} USDT...")
-            pass
-        else:
-            # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-            # await update.message.reply_text(f"🛒 [STEP 1/3] Placing Limit Buy Order at {order_price} for {amount_usdt} USDT...")
-            pass
-
-        # Fixed Syntax Error: Corrected the line 105 error
+        if order_type == 'limit' and context.user_data.get('sniping_mode'):
+            raise ccxt.ExchangeError("Limit orders are not supported in Sniping Mode for immediate execution.")
+            
+        await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type.upper()} Buy Order for {amount_usdt} USDT...")
+        
         market_buy_order = await exchange.create_order(
             symbol=symbol,
             type=order_type,
@@ -262,34 +258,45 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             params={'cost': amount_usdt, 'createMarketBuyOrderRequiresPrice': False} # Use 'cost' parameter to specify amount in quote currency (USDT)
         )
         
-        # CRITICAL FIX: Check if the order response is valid and has the 'info' field.
-        # The 'find' error is likely coming from an internal ccxt method that expects 'info'
-        # to be present in the order response, but it's None for some exchanges/errors.
-        if not market_buy_order or not market_buy_order.get('info'):
+        # CRITICAL FIX: Ensure the order was placed successfully and has an ID
+        if not market_buy_order or not market_buy_order.get('id'):
             raise ccxt.ExchangeError("Failed to place market buy order. Order response is incomplete or empty.")
-        
-        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text(f"👍 [SUCCESS] Buy Order placed. ID: {market_buy_order['id']}")
-        
-        # --- STEP 2: Get Execution Details ---
-        # Removed asyncio.sleep(2) to speed up the process
-        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text("🔍 [STEP 2/3] Getting execution details...")
-        
-        # Fetch order details and trades to get accurate filled amount and average price
-        # CRITICAL FIX: Ensure market_buy_order['id'] is not None before calling fetch_order
-        order_id = market_buy_order.get('id')
-        if not order_id:
-            raise ccxt.ExchangeError("Failed to get order ID from market buy order response.")
             
-        order_details = await exchange.fetch_order(order_id, symbol)
+        order_id = market_buy_order['id']
         
-        if order_details.get('status') not in ['closed', 'filled']:
-            # Fallback to fetching trades if order status is not final
-            trades = await exchange.fetch_my_trades(symbol, since=None, limit=None, params={'order': market_buy_order['id']})
+        # 2. Wait for Order to be Filled and Get Execution Details
+        await update.message.reply_text("🔍 [STEP 2/3] Waiting for order to be filled and getting execution details...")
+        
+        # Polling loop to wait for the order to be filled (Optimized for speed)
+        order_details = None
+        for _ in range(100): # Try for a maximum of 100 * 0.03 = 3 seconds
+            try:
+                order_details = await exchange.fetch_order(order_id, symbol)
+                if order_details.get('status') in ['closed', 'filled']:
+                    break
+            except Exception:
+                # Ignore temporary errors during polling
+                pass
+            await asyncio.sleep(0.03) # High-speed polling
+            
+        if not order_details or order_details.get('status') not in ['closed', 'filled']:
+            # Cancel the order if it's still open and failed to fill
+            try:
+                await exchange.cancel_order(order_id, symbol)
+            except Exception:
+                pass # Ignore cancel errors
+            raise ccxt.ExchangeError(f"Buy order failed to fill within the time limit. Final status: {order_details.get('status') if order_details else 'Unknown'}")
+            
+        # Extract execution details
+        avg_price = float(order_details.get('average') or 0)
+        filled_amount = float(order_details.get('filled') or 0)
+        
+        if not avg_price or not filled_amount:
+            # Fallback to fetching trades if average/filled is missing (e.g., some exchanges)
+            trades = await exchange.fetch_my_trades(symbol, since=None, limit=None, params={'order': order_id})
             
             if not trades:
-                 raise ccxt.ExchangeError("Market order was not filled and no trades were found.")
+                 raise ccxt.ExchangeError("Buy order was filled but execution details are missing, and no trades were found.")
             
             filled_amount = sum(float(trade['amount']) for trade in trades)
             total_cost = sum(float(trade['cost']) for trade in trades)
@@ -297,57 +304,35 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             
             if not avg_price or not filled_amount:
                 raise ccxt.ExchangeError("Failed to get execution details from order or trades.")
-            
-        else:
-            avg_price = float(order_details['average'])
-            filled_amount = float(order_details['filled'])
-
-            if not avg_price or not filled_amount:
-                raise ccxt.ExchangeError("Failed to get execution details.")
-        
-        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text(f"📊 [DETAILS] Avg Price: {avg_price:.6f}, Quantity: {filled_amount:.6f}")
-        
-        # --- STEP 3: Take Profit Limit Sell ---
-        target_sell_price = avg_price * (1 + profit_percent / 100)
-        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...")
-	        
-        # Get precision for the symbol
-        # Removed any potential sleep/delay here to ensure immediate execution
-        try:
-            await exchange.load_markets()
-            
-            # The symbol might not be in the markets list if it was just listed, 
-            # but we need the market info for precision. We will try to get it.
-            market = exchange.markets.get(symbol)
-            
-            if not market:
-                # If market info is None, it means the symbol is not recognized by the exchange yet,
-                # which is a critical issue for setting precision.
-                raise ccxt.BadSymbol(f"Symbol {symbol} market info is not available on {exchange.id}. Cannot set precision.")
                 
-            # Ensure amount is rounded to the correct precision
-            precision = market['precision']['amount']
+        await update.message.reply_text(f"📊 [DETAILS] Avg Price: {avg_price:.6f}, Quantity: {filled_amount:.6f}")
+        
+        # 3. Take Profit Limit Sell and Stop Loss
+        target_sell_price = avg_price * (1 + profit_percent / 100)
+        
+        # Get precision for the symbol
+        await exchange.load_markets()
+        market = exchange.markets.get(symbol)
+        
+        if not market:
+            raise ccxt.BadSymbol(f"Symbol {symbol} market info is not available on {exchange.id}. Cannot set precision.")
             
-            import math
-            # Round down the filled amount to the correct precision
-            filled_amount_precise = math.floor(filled_amount * (10**precision)) / (10**precision)
-            
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ [WARNING] Failed to get market info/precision: {e}. Using raw filled amount.")
-            filled_amount_precise = filled_amount
-            
+        precision = market['precision']['amount']
+        
+        import math
+        # Round down the filled amount to the correct precision
+        filled_amount_precise = math.floor(filled_amount * (10**precision)) / (10**precision)
+        
+        await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...")
+        
         limit_sell_order = await exchange.create_limit_sell_order(symbol, filled_amount_precise, target_sell_price)
-        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text(f"📈 [SUCCESS] Take Profit Order placed. ID: {limit_sell_order['id']}")
         
         # --- OPTIONAL: Stop Loss Order ---
         stop_order = None
         if params['use_stop_loss']:
             stop_loss_price = avg_price * (1 - stop_loss_percent / 100)
-            # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-            # await update.message.reply_text(f"🛡️ [OPTIONAL] Placing Stop Loss Order (-{stop_loss_percent}%) at {stop_loss_price:.6f}...")
+            
+            await update.message.reply_text(f"🛡️ [OPTIONAL] Placing Stop Loss Order (-{stop_loss_percent}%) at {stop_loss_price:.6f}...")
             
             # Note: Stop Market order creation can vary by exchange. Using a common pattern.
             stop_order = await exchange.create_order(
@@ -359,14 +344,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
                 params={'stopPrice': stop_loss_price}
             )
             
-            # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-            # await update.message.reply_text(f"📉 [SUCCESS] Stop Loss Order placed. ID: {stop_order['id']}")
-            # await update.message.reply_text("‼️ WARNING: TWO OPEN ORDERS ‼️\nManually cancel the other order if one executes. (Take Profit is Limit, Stop Loss is Market, Stop)")
-        
         # --- AUTOMATIC PROFIT SHARING LOGIC ---
-        # Send the monitoring message ONCE
-        # AVOID TELEGRAM MESSAGE DELAY: Remove unnecessary messages
-        # await update.message.reply_text("⏳ [MONITOR] جاري مراقبة أمر البيع (Take Profit) لتنفيذ الاقتطاع التلقائي...")
+        await update.message.reply_text("⏳ [MONITOR] جاري مراقبة أمر البيع (Take Profit) لتنفيذ الاقتطاع التلقائي...")
         
         order_id = limit_sell_order['id']
         
@@ -381,7 +360,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
                 await update.message.reply_text("✅ [SUCCESS] تم تنفيذ أمر البيع (Take Profit) بنجاح!")
                 
                 # Cancel Stop Loss Order if it exists and is still open
-                if stop_order and stop_order['status'] == 'open':
+                if stop_order and stop_order.get('status') == 'open':
                     await exchange.cancel_order(stop_order['id'], symbol)
                     await update.message.reply_text("❌ [CLEANUP] تم إلغاء أمر وقف الخسارة (Stop Loss).")
                     
@@ -390,35 +369,21 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
                     update, 
                     context, 
                     user_id, 
-                    amount_usdt_spent, # amount_usdt_spent is the initial investment
+                    amount_usdt, # amount_usdt is the initial investment
                     filled_amount_precise, 
                     avg_price, 
                     target_sell_price, 
                     symbol
                 )
                 break # Exit the monitoring loop
-            
-            elif order_status['status'] == 'canceled' or order_status['status'] == 'rejected':
+                
+            if order_status['status'] == 'canceled' or order_status['status'] == 'rejected':
                 await update.message.reply_text("❌ [FAILURE] تم إلغاء أو رفض أمر البيع (Take Profit). لن يتم اقتطاع أي شيء.")
                 break # Exit the monitoring loop
             
             # NO REPEATING STATUS MESSAGE - Monitoring continues silently
             
         await update.message.reply_text("✅ **تم الانتهاء من عملية التداول والاقتطاع (إن وجدت).**")
-            
-    except ccxt.ExchangeError as e:
-        await update.message.reply_text(f"🚨 [EXCHANGE ERROR] {type(e).__name__}: {e}")
-    except ccxt.NetworkError as e:
-        await update.message.reply_text(f"🚨 [NETWORK ERROR] {type(e).__name__}: {e}")
-    except Exception as e:
-        # Check if the error is the specific AttributeError
-        if "AttributeError: 'NoneType' object has no attribute 'find'" in str(e):
-            await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}\n\n**ملاحظة:** قد يكون هذا الخطأ ناتجًا عن فشل المنصة في إرجاع تفاصيل الأمر بشكل صحيح. يرجى التأكد من أن الرمز المدخل صحيح وأن مفاتيح API لديها صلاحية التداول.")
-        else:
-            await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}")
-    finally:
-        if 'exchange' in locals():
-            await exchange.close()
 
 
 # --- PROFIT SHARING AND WITHDRAWAL LOGIC ---
