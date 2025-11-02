@@ -238,6 +238,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     # The symbol is already formatted by the calling function (sniping_and_trade or trade_start).
     symbol = params['symbol']
     
+    try:
         # --- NEW: Place Buy Order and Get Execution Details (Optimized for Sniping) ---
         
         # 1. Place Market Buy Order
@@ -384,6 +385,20 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             # NO REPEATING STATUS MESSAGE - Monitoring continues silently
             
         await update.message.reply_text("✅ **تم الانتهاء من عملية التداول والاقتطاع (إن وجدت).**")
+            
+    except ccxt.ExchangeError as e:
+        await update.message.reply_text(f"🚨 [EXCHANGE ERROR] {type(e).__name__}: {e}")
+    except ccxt.NetworkError as e:
+        await update.message.reply_text(f"🚨 [NETWORK ERROR] {type(e).__name__}: {e}")
+    except Exception as e:
+        # Check if the error is the specific AttributeError
+        if "AttributeError: 'NoneType' object has no attribute 'find'" in str(e):
+            await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}\n\n**ملاحظة:** قد يكون هذا الخطأ ناتجًا عن فشل المنصة في إرجاع تفاصيل الأمر بشكل صحيح. يرجى التأكد من أن الرمز المدخل صحيح وأن مفاتيح API لديها صلاحية التداول.")
+        else:
+            await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}")
+    finally:
+        if 'exchange' in locals():
+            await exchange.close()
 
 
 # --- PROFIT SHARING AND WITHDRAWAL LOGIC ---
