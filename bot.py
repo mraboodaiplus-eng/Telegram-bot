@@ -333,9 +333,25 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         # Round down the filled amount to the correct precision
         filled_amount_precise = math.floor(filled_amount * (10**precision)) / (10**precision)
         
-        await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...")
+        # CRITICAL FIX: Get the actual available balance after the buy order to account for fees
+        base_currency = market['base'] # e.g., 'ALU'
         
-        limit_sell_order = await exchange.create_limit_sell_order(symbol, filled_amount_precise, target_sell_price)
+        # Fetch the balance for the base currency (the coin we just bought)
+        balance = await exchange.fetch_balance()
+        available_amount = balance.get(base_currency, {}).get('free', 0)
+        
+        # Use the minimum of the calculated filled amount and the actual available balance
+        amount_to_sell = min(filled_amount_precise, available_amount)
+        
+        if amount_to_sell <= 0:
+            raise ccxt.InsufficientFunds(f"Insufficient available balance ({available_amount} {base_currency}) to place the sell order after fees.")
+            
+        await update.message.reply_text(f"🎯 [STEP 3/3] Placing Take Profit Limit Sell (+{profit_percent}%) at {target_sell_price:.6f}...\n(Selling actual available amount: {amount_to_sell:.6f} {base_currency})")
+        
+        limit_sell_order = await exchange.create_limit_sell_order(symbol, amount_to_sell, target_sell_price)
+        
+        # Update filled_amount_precise to the actual amount sold for profit calculation
+        filled_amount_precise = amount_to_sell
         
         # --- OPTIONAL: Stop Loss Order ---
         stop_order = None
