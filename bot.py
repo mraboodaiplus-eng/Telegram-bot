@@ -1729,38 +1729,41 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(language_callback_handler, pattern='^select_language$'))
     application.add_handler(CallbackQueryHandler(set_language, pattern='^set_lang_'))
     
-    # === START KEEP-ALIVE WEB SERVER (Flask) ===
-    # We run the Flask server in a separate thread to keep the Polling bot alive and satisfy Render's port requirement.
-    import threading
-    def run_web_server():
-        PORT = int(os.environ.get("PORT", 10000))
-        
-        try:
-            from waitress import serve
-            print(f"Starting Waitress server on port {PORT}...")
-            serve(app, host='0.0.0.0', port=PORT)
-        except ImportError:
-            print(f"Waitress not found. Starting Flask development server on port {PORT}...")
-            app.run(host='0.0.0.0', port=PORT)
-
-    # Start the web server in a new thread
-    threading.Thread(target=run_web_server, daemon=True).start()
-
-    # === START POLLING BOT ===
-    print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
+    # === START WEBHOOK BOT ===
+    PORT = int(os.environ.get("PORT", 5000))
+    WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
     
-    # Start the grid monitoring loop after the event loop is running
-    async def post_init_callback(application: Application):
-        asyncio.create_task(grid_monitoring_loop(application))
+    if WEBHOOK_URL:
+        print(f"Bot is running in Webhook mode on port {PORT}...")
         
-    # The post_init argument is not supported in this version. We will use the application.post_init hook instead.
-    application.post_init = post_init_callback
-    
-    application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
+        # Start the grid monitoring loop after the event loop is running
+        async def post_init_callback(application: Application):
+            await application.bot.set_webhook(url=WEBHOOK_URL)
+            asyncio.create_task(grid_monitoring_loop(application))
+            
+        application.post_init = post_init_callback
+        
+        # We use the built-in PTB webserver for simplicity and better integration
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path="", # The path component of the URL to which Telegram will send updates
+            webhook_url=WEBHOOK_URL,
+            allowed_updates=Update.ALL_TYPES
+        )
+    else:
+        # Fallback to Polling for local development
+        print("Bot is running in Polling mode (Local Development)... Send /start to the bot on Telegram.")
+        
+        # Start the grid monitoring loop after the event loop is running
+        async def post_init_callback(application: Application):
+            asyncio.create_task(grid_monitoring_loop(application))
+            
+        application.post_init = post_init_callback
+        
+        application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
 
-@app.route('/', methods=['GET'])
-def home():
-    return "Telegram Bot is running (Polling mode with Keep-Alive).", 200
+
 
 
 if __name__ == "__main__":
