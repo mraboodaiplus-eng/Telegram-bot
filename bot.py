@@ -242,11 +242,13 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         # --- NEW: Place Buy Order and Get Execution Details (Optimized for Sniping) ---
         
         # 1. Place Market Buy Order
-        order_type = 'limit' if params['order_type'] == 'limit' else 'market'
-        order_price = params.get('limit_price') if order_type == 'limit' else None
+        # CRITICAL FIX: For sniping, we must use a Market Order for speed and reliability.
+        order_type = 'market'
+        order_price = None
         
-        if order_type == 'limit' and context.user_data.get('sniping_mode'):
-            raise ccxt.ExchangeError("Limit orders are not supported in Sniping Mode for immediate execution.")
+        # Check if the original request was a limit order in sniping mode (which is now overridden)
+        if params['order_type'] == 'limit' and context.user_data.get('sniping_mode'):
+            await update.message.reply_text("⚠️ [WARNING] تم تحويل أمر التداول إلى **أمر سوق (Market Order)** لضمان السرعة القصوى في وضع القنص.")
             
         await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type.upper()} Buy Order for {amount_usdt} USDT...")
         
@@ -398,11 +400,11 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
     except ccxt.NetworkError as e:
         await update.message.reply_text(f"🚨 [NETWORK ERROR] {type(e).__name__}: {e}")
     except Exception as e:
-        # Check if the error is the specific AttributeError
-        if "AttributeError: 'NoneType' object has no attribute 'find'" in str(e):
-            await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}\n\n**ملاحظة:** قد يكون هذا الخطأ ناتجًا عن فشل المنصة في إرجاع تفاصيل الأمر بشكل صحيح. يرجى التأكد من أن الرمز المدخل صحيح وأن مفاتيح API لديها صلاحية التداول.")
+        # CRITICAL FIX: Catch the specific AttributeError and provide a clear message
+        if isinstance(e, AttributeError) and "'NoneType' object has no attribute 'find'" in str(e):
+            await update.message.reply_text(f"🚨 [CRITICAL ERROR] فشل في معالجة استجابة أمر الشراء: {type(e).__name__}.\n\n**السبب المحتمل:** المنصة (BINGX) لم ترجع استجابة صالحة لأمر الشراء. يرجى التأكد من صلاحية مفاتيح API، وتوفر الرصيد الكافي، وأن الرمز المدخل صحيح.")
         else:
-            await update.message.reply_text(f"🚨 [CRITICAL ERROR] {type(e).__name__}: {e}")
+            await update.message.reply_text(f"🚨 [CRITICAL ERROR] خطأ غير متوقع: {type(e).__name__}: {e}")
     finally:
         if 'exchange' in locals():
             await exchange.close()
