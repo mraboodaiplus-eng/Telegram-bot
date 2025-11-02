@@ -143,7 +143,7 @@ SELECT_EXCHANGE, WAITING_FOR_API_KEY, WAITING_FOR_API_SECRET = range(51, 54)
 
 # --- EXCHANGE TRADING LOGIC ---
 
-def initialize_exchange(user_id, exchange_id, api_key, api_secret):
+def initialize_exchange(exchange_id, api_key, api_secret):
     """Initializes the ccxt exchange object with provided API keys and the user's exchange_id."""
     
     if not exchange_id:
@@ -221,7 +221,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         return  
     
     try:
-        exchange = initialize_exchange(user_id, exchange_id, api_key, api_secret)
+        exchange = initialize_exchange(exchange_id, api_key, api_secret)
     except ValueError as e:
         await update.message.reply_text(f"🚨 [ERROR] خطأ في تهيئة الاتصال: {e}")
         return
@@ -459,7 +459,7 @@ async def handle_profit_withdrawal(update: Update, context: ContextTypes.DEFAULT
     
     try:
         user_record = await get_user(user_id)
-        exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
+        exchange = initialize_exchange(user_record['exchange_id'], user_record['api_key'], user_record['api_secret'])
         
         # NOTE: The network code for BEP20 on most exchanges is 'BSC' or 'BEP20'.
         withdrawal_result = await exchange.withdraw(
@@ -512,7 +512,7 @@ async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         exchange_class = getattr(ccxt, exchange_id)
         temp_exchange = exchange_class({'enableRateLimit': True})
     except Exception as e:
-        await update.message.reply_text(f"🚨 [CRITICAL ERROR] Failed to initialize temporary exchange: {e}")
+        await update.message.reply_text(f"🚨 [CRITICAL ERROR] Failed to initialize temporary exchange for {exchange_id}: {e}")
         return
     
     # 1. Wait for listing (Sniping)
@@ -1090,7 +1090,7 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     try:
-        exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
+        exchange = initialize_exchange(user_record['exchange_id'], user_record['api_key'], user_record['api_secret'])
         await exchange.load_markets()
         if symbol not in exchange.markets:
             await update.message.reply_text(f"🚨 [ERROR] رمز العملة {symbol} غير متوفر على المنصة.")
@@ -1273,7 +1273,7 @@ async def get_grid_id_to_stop(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_record = await get_user(user_id)
     
     try:
-        exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
+        exchange = initialize_exchange(user_record['exchange_id'], user_record['api_key'], user_record['api_secret'])
         
         # Fetch all open orders for the symbol
         open_orders = await exchange.fetch_open_orders(target_grid['symbol'])
@@ -1494,7 +1494,7 @@ async def grid_monitoring_loop(application: Application):
                     continue
                     
                 try:
-                    exchange = initialize_exchange(user_id, user_record['api_key'], user_record['api_secret'])
+                    exchange = initialize_exchange(user_record['exchange_id'], user_record['api_key'], user_record['api_secret'])
                     await exchange.load_markets()
                     market = exchange.markets[symbol]
                     price_precision = market['precision']['price']
