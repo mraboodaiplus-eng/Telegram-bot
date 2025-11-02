@@ -250,6 +250,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             
         await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type.upper()} Buy Order for {amount_usdt} USDT...")
         
+        # CRITICAL FIX: Place the order and ensure the response is not None
         market_buy_order = await exchange.create_order(
             symbol=symbol,
             type=order_type,
@@ -259,9 +260,15 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             params={'cost': amount_usdt, 'createMarketBuyOrderRequiresPrice': False} # Use 'cost' parameter to specify amount in quote currency (USDT)
         )
         
+        # CRITICAL FIX: The error 'NoneType' object has no attribute 'find' 
+        # is likely happening inside ccxt when it tries to process a None response from the exchange.
+        # We must ensure the response is not None before proceeding.
+        if market_buy_order is None:
+            raise ccxt.ExchangeError("Exchange returned a None response for the buy order. Check API keys and permissions.")
+            
         # CRITICAL FIX: Ensure the order was placed successfully and has an ID
-        if not market_buy_order or not market_buy_order.get('id'):
-            raise ccxt.ExchangeError("Failed to place market buy order. Order response is incomplete or empty.")
+        if not market_buy_order.get('id'):
+            raise ccxt.ExchangeError("Failed to place market buy order. Order response is incomplete or missing ID.")
             
         order_id = market_buy_order['id']
         
