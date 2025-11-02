@@ -510,10 +510,16 @@ async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         return
         
     try:
+        # The exchange ID is a string (e.g., 'bingx'). We get the class from ccxt.
         exchange_class = getattr(ccxt, exchange_id)
+        # Initialize the exchange object for public calls (fetching ticker)
         temp_exchange = exchange_class({'enableRateLimit': True})
+    except AttributeError:
+        await update.message.reply_text(f"🚨 [CRITICAL ERROR] المنصة المختارة غير مدعومة: {exchange_id}. يرجى اختيار منصة مدعومة.")
+        return
     except Exception as e:
-        await update.message.reply_text(f"🚨 [CRITICAL ERROR] Failed to initialize temporary exchange for {exchange_id}: {e}")
+        # This is the line that was causing the original error if EXCHANGE_ID was used instead of exchange_id
+        await update.message.reply_text(f"🚨 [CRITICAL ERROR] فشل تهيئة المنصة المؤقتة: {type(e).__name__}: {e}")
         return
     
     # 1. Wait for listing (Sniping)
