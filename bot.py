@@ -151,7 +151,7 @@ def initialize_exchange(exchange_id, api_key, api_secret):
         raise ValueError("Exchange ID is missing. Please use /set_api to select an exchange.")
         
     # Get the exchange class from ccxt dynamically based on the user's exchange_id
-            try:
+    try:
         exchange_class = getattr(ccxt, exchange_id)
     except AttributeError:
         raise ValueError(f"Unsupported exchange: {exchange_id}. Please select a valid exchange.")
