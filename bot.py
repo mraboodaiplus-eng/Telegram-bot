@@ -198,7 +198,7 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
                     if ticker and ticker.get('last') is not None:
                         # AVOID TELEGRAM MESSAGE DELAY: Only return, the main function will handle the success message
                         return
-            except Exception:
+                except Exception:
                     # If ticker fails, it might be listed but not yet tradable, continue waiting
                     pass
                     
