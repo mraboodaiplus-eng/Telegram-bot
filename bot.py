@@ -422,9 +422,21 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         await update.message.reply_text(f"🚨 [NETWORK ERROR] {type(e).__name__}: {e}")
     except Exception as e:
         # CRITICAL FIX: Catch the specific AttributeError and provide a clear message
-        if isinstance(e, AttributeError) and "'NoneType' object has no attribute 'find'" in str(e):
-            await update.message.reply_text(f"🚨 [CRITICAL ERROR] فشل في معالجة استجابة أمر الشراء: {type(e).__name__}.\n\n**السبب المحتمل:** المنصة (BINGX) لم ترجع استجابة صالحة لأمر الشراء. يرجى التأكد من صلاحية مفاتيح API، وتوفر الرصيد الكافي، وأن الرمز المدخل صحيح.")
+        # Check for common CCXT errors that might be masked by a generic Exception
+        error_message = str(e)
+        
+        # Check for specific CCXT errors that indicate API or balance issues
+        if "API-key format invalid" in error_message or "Invalid API key" in error_message:
+            await update.message.reply_text("🚨 [API ERROR] فشل الاتصال بالمنصة. يرجى التأكد من أن مفاتيح API صحيحة.")
+        elif "Insufficient balance" in error_message or "not enough balance" in error_message:
+            await update.message.reply_text("🚨 [BALANCE ERROR] رصيدك غير كافٍ لإجراء عملية الشراء.")
+        elif "BadSymbol" in error_message:
+            await update.message.reply_text(f"🚨 [SYMBOL ERROR] الرمز {params['symbol']} غير متوفر أو غير صحيح على المنصة.")
+        elif "'NoneType' object has no attribute 'find'" in error_message:
+            # This is the original generic error that was being masked
+            await update.message.reply_text(f"🚨 [CRITICAL ERROR] فشل في معالجة استجابة أمر الشراء: {type(e).__name__}.\n\n**السبب المحتمل:** المنصة لم ترجع استجابة صالحة لأمر الشراء. يرجى التأكد من صلاحية مفاتيح API، وتوفر الرصيد الكافي، وأن الرمز المدخل صحيح.")
         else:
+            # Fallback for truly unexpected errors
             await update.message.reply_text(f"🚨 [CRITICAL ERROR] خطأ غير متوقع: {type(e).__name__}: {e}")
     finally:
         if 'exchange' in locals():
