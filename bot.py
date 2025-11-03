@@ -144,7 +144,7 @@ SELECT_EXCHANGE, WAITING_FOR_API_KEY, WAITING_FOR_API_SECRET = range(51, 54)
 
 # --- EXCHANGE TRADING LOGIC ---
 
-def initialize_exchange(exchange_id, api_key, api_secret):
+async def initialize_exchange(exchange_id, api_key, api_secret):
     """Initializes the ccxt exchange object with provided API keys and the user's exchange_id."""
     
     if not exchange_id:
@@ -232,7 +232,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         return  
     
     try:
-        exchange = initialize_exchange(exchange_id, api_key, api_secret)
+        exchange = await initialize_exchange(exchange_id, api_key, api_secret)
     except ValueError as e:
         await update.message.reply_text(f"🚨 [ERROR] خطأ في تهيئة الاتصال: {e}")
         return
@@ -263,18 +263,43 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             order_type = 'market'
             order_price = None
         
-
-            
-        await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type.upper()} Buy Order for {amount_usdt} USDT...")
         
-        # CRITICAL FIX: Place the order and ensure the response is not None
+        # 1. Get current price and market info
+        await exchange.load_markets()
+        market = exchange.markets.get(symbol)
+        
+        if not market:
+            raise ccxt.BadSymbol(f"Symbol {symbol} market info is not available on {exchange.id}.")
+            
+        # Get the current price (best ask for buy order)
+        ticker = await exchange.fetch_ticker(symbol)
+        current_price = ticker['ask'] if ticker and ticker.get('ask') else ticker['last']
+        
+        if not current_price:
+            raise ccxt.ExchangeError(f"Could not fetch current price for {symbol}.")
+            
+        # 2. Calculate the amount (quantity) to buy
+        # amount = cost / price
+        amount_to_buy_raw = amount_usdt / current_price
+        
+        # Apply amount precision (rounding down)
+        precision = market['precision']['amount']
+        import math
+        amount_to_buy = math.floor(amount_to_buy_raw * (10**precision)) / (10**precision)
+        
+        if amount_to_buy <= 0:
+            raise ccxt.ExchangeError(f"Calculated amount to buy ({amount_to_buy}) is zero or less. Check minimum order size.")
+            
+        await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type.upper()} Buy Order for {amount_to_buy:.6f} {market['base']} (Cost: {amount_usdt} USDT)...")
+        
+        # CRITICAL FIX: Place the order using 'amount' instead of 'cost' in params
         market_buy_order = await exchange.create_order(
             symbol=symbol,
             type=order_type,
             side='buy',
-            amount=None,
+            amount=amount_to_buy, # Use calculated amount
             price=order_price, # Only used for limit order
-            params={'cost': amount_usdt, 'createMarketBuyOrderRequiresPrice': False}
+            params={} # Remove unnecessary 'cost' param
         )
         
         # CRITICAL FIX: The error 'NoneType' object has no attribute 'find' 
