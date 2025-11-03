@@ -242,13 +242,18 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         # --- NEW: Place Buy Order and Get Execution Details (Optimized for Sniping) ---
         
         # 1. Place Market Buy Order
-        # CRITICAL FIX: For sniping, we must use a Market Order for speed and reliability.
-        order_type = 'market'
-        order_price = None
+        # Determine order type and price based on user input
+        order_type = params.get('order_type', 'market')
+        order_price = params.get('order_price')
+
+        # Override to Market Order if Sniping Mode is active
+        if context.user_data.get('sniping_mode'):
+            if order_type == 'limit':
+                await update.message.reply_text("⚠️ [WARNING] تم تحويل أمر التداول إلى **أمر سوق (Market Order)** لضمان السرعة القصوى في وضع القنص.")
+            order_type = 'market'
+            order_price = None
         
-        # Check if the original request was a limit order in sniping mode (which is now overridden)
-        if params['order_type'] == 'limit' and context.user_data.get('sniping_mode'):
-            await update.message.reply_text("⚠️ [WARNING] تم تحويل أمر التداول إلى **أمر سوق (Market Order)** لضمان السرعة القصوى في وضع القنص.")
+
             
         await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type.upper()} Buy Order for {amount_usdt} USDT...")
         
@@ -1210,22 +1215,25 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
             
         # 4. Save Grid to Database
-        # Convert Decimal back to float for database storage (assuming DB uses float/real)
-        grid_id = await add_new_grid(
-            user_id, 
-            symbol, 
-            float(lower_bound), 
-            float(upper_bound), 
-            num_grids, 
-            float(amount_per_order)
-        )
-        
-        await update.message.reply_text(
-            f"✅ **تم إنشاء شبكة التداول بنجاح!**\n"
-            f"معرف الشبكة: **{grid_id}**\n"
-            f"تم وضع **{len(placed_orders)}** أمر شراء مبدئي.\n\n"
-            "**بدء المراقبة:** سيقوم البوت الآن بمراقبة هذه الشبكة. عند تنفيذ أي أمر شراء، سيقوم البوت تلقائياً بوضع أمر بيع محدد (Limit Sell) عند نقطة الشبكة التالية."
-        )
+	        # Convert Decimal back to float for database storage (assuming DB uses float/real)
+	        grid_id = await add_new_grid(
+	            user_id, 
+	            symbol, 
+	            float(lower_bound), 
+	            float(upper_bound), 
+	            num_grids, 
+	            float(amount_per_order)
+	        )
+	        
+	        await update.message.reply_text(
+	            f"✅ **تم إنشاء شبكة التداول بنجاح!**\n"
+	            f"معرف الشبكة: **{grid_id}**\n"
+	            f"تم وضع **{len(placed_orders)}** أمر شراء مبدئي.\n\n"
+	            "**بدء المراقبة:** سيقوم البوت الآن بمراقبة هذه الشبكة. عند تنفيذ أي أمر شراء، سيقوم البوت تلقائياً بوضع أمر بيع محدد (Limit Sell) عند نقطة الشبكة التالية."
+	        )
+	        
+	        # CRITICAL FIX: Start the monitoring task for the new grid
+	        await start_grid_monitoring(context.application, grid_id)
         
     except Exception as e:
         await update.message.reply_text(f"🚨 [CRITICAL ERROR] حدث خطأ أثناء إنشاء الشبكة: {type(e).__name__}: {e}")
@@ -1473,181 +1481,239 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 # --- END LANGUAGE SELECTION HANDLERS ---
 
-async def grid_monitoring_loop(application: Application):
-    """Continuously monitors active grids and places new orders."""
+# --- GRID MONITORING LOGIC (Refactored to use individual tasks) ---
+
+# Dictionary to hold active grid tasks: {grid_id: asyncio.Task}
+active_grid_tasks = {}
+
+async def grid_monitoring_task(application: Application, grid_id: int):
+    """Monitors a single grid and places new orders based on fills."""
+    
+    # The loop will run until the grid is stopped in the database
     while True:
         try:
-            active_grids = await get_active_grids()
-            if not active_grids:
-                # Sleep longer if no active grids
-                await asyncio.sleep(60) 
-                continue
+            grid = await get_grid(grid_id)
+            if not grid or grid['status'] != 'active':
+                # Grid is stopped or not found, exit the task
+                break
                 
-            for grid in active_grids:
-                user_id = grid['user_id']
-                grid_id = grid['id']
-                symbol = grid['symbol']
-                
-                # Use Decimal for all calculations
-                try:
-                    lower_bound = Decimal(str(grid['lower_bound']))
-                    upper_bound = Decimal(str(grid['upper_bound']))
-                    num_grids = int(grid['num_grids'])
-                    amount_per_order = Decimal(str(grid['amount_per_order']))
-                except Exception as e:
-                    print(f"Error converting grid data to Decimal for grid {grid_id}: {e}")
-                    continue
-                
-                user_record = await get_user(user_id)
-                if not user_record or not user_record.get('api_key'):
-                    # Grid is active but user keys are missing, stop the grid
-                    await stop_grid(grid_id)
-                    await application.bot.send_message(user_id, f"🚨 **توقف الشبكة {grid_id}**\n\nتم إيقاف شبكة التداول لـ {symbol} بسبب عدم توفر مفاتيح API.")
-                    continue
-                    
-                try:
-                    exchange = initialize_exchange(user_record['exchange_id'], user_record['api_key'], user_record['api_secret'])
-                    await exchange.load_markets()
-                    market = exchange.markets[symbol]
-                    price_precision = market['precision']['price']
-                    amount_precision = market['precision']['amount']
-                    
-                    # 1. Calculate Grid Points
-                    price_range = upper_bound - lower_bound
-                    grid_step = price_range / Decimal(num_grids)
-                    
-                    grid_points = []
-                    for i in range(num_grids + 1):
-                        price = lower_bound + Decimal(i) * grid_step
-                        grid_points.append(price)
-                    
-                    # 2. Fetch Open Orders
-                    open_orders = await exchange.fetch_open_orders(symbol)
-                    
-                    # 3. Check for Filled Orders (Simplified Logic)
-                    
-                    # Get the current price to determine which side (Buy/Sell) should be open
-                    ticker = await exchange.fetch_ticker(symbol)
-                    current_price = Decimal(str(ticker['last']))
-                    
-                    # Determine the next Buy and Sell points
-                    
-                    # Find the nearest grid point below the current price for Buy
-                    next_buy_price = None
-                    for price in sorted(grid_points, reverse=True):
-                        if price < current_price:
-                            next_buy_price = price
-                            break
-                            
-                    # Find the nearest grid point above the current price for Sell
-                    next_sell_price = None
-                    for price in sorted(grid_points):
-                        if price > current_price:
-                            next_sell_price = price
-                            break
-                            
-                    # --- Logic for Buy Order Replacement (If a Buy was filled) ---
-                    # Check if the next Buy order is open
-                    # We check if an open order exists at the expected next_buy_price
-                    buy_order_open = any(
-                        order['side'] == 'buy' and 
-                        round(Decimal(str(order['price'])), price_precision) == round(next_buy_price, price_precision)
-                        for order in open_orders
-                    )
-                    
-                    if next_buy_price and not buy_order_open:
-                        # A Buy order was filled (or cancelled), place a new Sell order at the next point up
-                        sell_price = next_buy_price + grid_step
-                        
-                        # Check if the sell price is within the upper bound
-                        if sell_price <= upper_bound:
-                            # Place the Sell Limit Order
-                            sell_amount_base = amount_per_order / sell_price # Approximate amount
-                            sell_amount_base = round(sell_amount_base, amount_precision)
-                            
-                            # Convert Decimal back to float for ccxt
-                            sell_price_float = float(round(sell_price, price_precision))
-                            sell_amount_float = float(sell_amount_base)
-                            
-                            try:
-                                await exchange.create_limit_sell_order(symbol, sell_amount_float, sell_price_float)
-                                await application.bot.send_message(user_id, f"📈 **شبكة {grid_id} (SELL)**\n\nتم تنفيذ أمر شراء، ووضع أمر بيع جديد عند: {sell_price_float:.{price_precision}f}")
-                            except Exception as e:
-                                await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر البيع عند {sell_price_float}: {e}")
-                                
-                        # Also, place a new Buy order at the point below the filled Buy order (if within lower bound)
-                        new_buy_price = next_buy_price - grid_step
-                        if new_buy_price >= lower_bound:
-                            buy_amount_base = amount_per_order / new_buy_price
-                            buy_amount_base = round(buy_amount_base, amount_precision)
-                            
-                            # Convert Decimal back to float for ccxt
-                            new_buy_price_float = float(round(new_buy_price, price_precision))
-                            buy_amount_float = float(buy_amount_base)
-                            
-                            try:
-                                await exchange.create_limit_buy_order(symbol, buy_amount_float, new_buy_price_float)
-                                await application.bot.send_message(user_id, f"🛒 **شبكة {grid_id} (BUY)**\n\nتم وضع أمر شراء جديد عند: {new_buy_price_float:.{price_precision}f}")
-                            except Exception as e:
-                                await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر الشراء عند {new_buy_price_float}: {e}")
-                                
-                    # --- Logic for Sell Order Replacement (If a Sell was filled) ---
-                    # Check if the next Sell order is open
-                    sell_order_open = any(
-                        order['side'] == 'sell' and 
-                        round(Decimal(str(order['price'])), price_precision) == round(next_sell_price, price_precision)
-                        for order in open_orders
-                    )
-                    
-                    if next_sell_price and not sell_order_open:
-                        # A Sell order was filled (or cancelled), place a new Buy order at the next point down
-                        buy_price = next_sell_price - grid_step
-                        
-                        # Check if the buy price is within the lower bound
-                        if buy_price >= lower_bound:
-                            # Place the Buy Limit Order
-                            buy_amount_base = amount_per_order / buy_price
-                            buy_amount_base = round(buy_amount_base, amount_precision)
-                            
-                            # Convert Decimal back to float for ccxt
-                            buy_price_float = float(round(buy_price, price_precision))
-                            buy_amount_float = float(buy_amount_base)
-                            
-                            try:
-                                await exchange.create_limit_buy_order(symbol, buy_amount_float, buy_price_float)
-                                await application.bot.send_message(user_id, f"🛒 **شبكة {grid_id} (BUY)**\n\nتم تنفيذ أمر بيع، ووضع أمر شراء جديد عند: {buy_price_float:.{price_precision}f}")
-                            except Exception as e:
-                                await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر الشراء عند {buy_price_float}: {e}")
-                                
-                        # Also, place a new Sell order at the point above the filled Sell order (if within upper bound)
-                        new_sell_price = next_sell_price + grid_step
-                        if new_sell_price <= upper_bound:
-                            sell_amount_base = amount_per_order / new_sell_price # Approximate amount
-                            sell_amount_base = round(sell_amount_base, amount_precision)
-                            
-                            # Convert Decimal back to float for ccxt
-                            new_sell_price_float = float(round(new_sell_price, price_precision))
-                            sell_amount_float = float(sell_amount_base)
-                            
-                            try:
-                                await exchange.create_limit_sell_order(symbol, sell_amount_float, new_sell_price_float)
-                                await application.bot.send_message(user_id, f"📈 **شبكة {grid_id} (SELL)**\n\nتم وضع أمر بيع جديد عند: {new_sell_price_float:.{price_precision}f}")
-                            except Exception as e:
-                                await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر البيع عند {new_sell_price_float}: {e}")
-                                
-                except Exception as e:
-                    print(f"Error monitoring grid {grid_id}: {e}")
-                    await application.bot.send_message(user_id, f"🚨 **خطأ فادح في مراقبة الشبكة {grid_id}**\n\nالخطأ: {type(e).__name__}: {e}")
-                finally:
-                    if 'exchange' in locals():
-                        await exchange.close()
-                        
-            # Sleep for a short interval before checking again
-            await asyncio.sleep(5) 
+            user_id = grid['user_id']
+            symbol = grid['symbol']
             
+            # Use Decimal for all calculations
+            lower_bound = Decimal(str(grid['lower_bound']))
+            upper_bound = Decimal(str(grid['upper_bound']))
+            num_grids = int(grid['num_grids'])
+            amount_per_order = Decimal(str(grid['amount_per_order']))
+            
+            user_record = await get_user(user_id)
+            if not user_record or not user_record.get('api_key'):
+                # User keys are missing, stop the grid and notify
+                await stop_grid(grid_id)
+                await application.bot.send_message(user_id, f"🚨 **توقف الشبكة {grid_id}**\n\nتم إيقاف شبكة التداول لـ {symbol} بسبب عدم توفر مفاتيح API.")
+                break
+                
+            exchange = initialize_exchange(user_record['exchange_id'], user_record['api_key'], user_record['api_secret'])
+            await exchange.load_markets()
+            market = exchange.markets[symbol]
+            price_precision = market['precision']['price']
+            amount_precision = market['precision']['amount']
+            
+            # 1. Calculate Grid Points
+            price_range = upper_bound - lower_bound
+            grid_step = price_range / Decimal(num_grids)
+            
+            grid_points = []
+            for i in range(num_grids + 1):
+                price = lower_bound + Decimal(i) * grid_step
+                grid_points.append(price)
+            
+            # 2. Fetch Open Orders and Trades
+            # Fetch open orders to see what is currently active
+            open_orders = await exchange.fetch_open_orders(symbol)
+            
+            # Get the current price
+            ticker = await exchange.fetch_ticker(symbol)
+            current_price = Decimal(str(ticker['last']))
+            
+            # Determine the next Buy and Sell points (based on current price)
+            
+            # Find the nearest grid point below the current price for Buy
+            next_buy_price = None
+            for price in sorted(grid_points, reverse=True):
+                if price < current_price:
+                    next_buy_price = price
+                    break
+                    
+            # Find the nearest grid point above the current price for Sell
+            next_sell_price = None
+            for price in sorted(grid_points):
+                if price > current_price:
+                    next_sell_price = price
+                    break
+                    
+            # --- Logic for Buy Order Replacement (If a Buy was filled) ---
+            # Check if the expected Buy order is missing (meaning it was filled or cancelled)
+            # The expected Buy order is at the next_buy_price
+            quantizer_price = Decimal(f'1e-{price_precision}')
+            
+            buy_order_open = any(
+                order['side'] == 'buy' and 
+                Decimal(str(order['price'])).quantize(quantizer_price) == next_buy_price.quantize(quantizer_price)
+                for order in open_orders
+            )
+            
+            if next_buy_price and not buy_order_open:
+                # A Buy order was filled (or cancelled), place a new Sell order at the next point up
+                sell_price = next_buy_price + grid_step
+                
+                # Check if the sell price is within the upper bound
+                if sell_price <= upper_bound:
+                    # Place the Sell Limit Order
+                    sell_amount_base = amount_per_order / sell_price # Approximate amount
+                    
+                    # Apply precision rounding
+                    quantizer_amount = Decimal(f'1e-{amount_precision}')
+                    sell_amount_base = sell_amount_base.quantize(quantizer_amount, rounding=ROUND_HALF_UP)
+                    
+                    # Convert Decimal back to float for ccxt
+                    sell_price_float = float(sell_price.quantize(quantizer_price, rounding=ROUND_HALF_UP))
+                    sell_amount_float = float(sell_amount_base)
+                    
+                    try:
+                        await exchange.create_limit_sell_order(symbol, sell_amount_float, sell_price_float)
+                        await application.bot.send_message(user_id, f"📈 **شبكة {grid_id} (SELL)**\n\nتم تنفيذ أمر شراء، ووضع أمر بيع جديد عند: {sell_price_float:.{price_precision}f}")
+                    except Exception as e:
+                        await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر البيع عند {sell_price_float}: {e}")
+                        
+                # Also, place a new Buy order at the point below the filled Buy order (if within lower bound)
+                new_buy_price = next_buy_price - grid_step
+                if new_buy_price >= lower_bound:
+                    buy_amount_base = amount_per_order / new_buy_price
+                    
+                    # Apply precision rounding
+                    quantizer_amount = Decimal(f'1e-{amount_precision}')
+                    buy_amount_base = buy_amount_base.quantize(quantizer_amount, rounding=ROUND_HALF_UP)
+                    
+                    # Convert Decimal back to float for ccxt
+                    new_buy_price_float = float(new_buy_price.quantize(quantizer_price, rounding=ROUND_HALF_UP))
+                    buy_amount_float = float(buy_amount_base)
+                    
+                    try:
+                        await exchange.create_limit_buy_order(symbol, buy_amount_float, new_buy_price_float)
+                        await application.bot.send_message(user_id, f"🛒 **شبكة {grid_id} (BUY)**\n\nتم وضع أمر شراء جديد عند: {new_buy_price_float:.{price_precision}f}")
+                    except Exception as e:
+                        await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر الشراء عند {new_buy_price_float}: {e}")
+                        
+            # --- Logic for Sell Order Replacement (If a Sell was filled) ---
+            # Check if the expected Sell order is missing (meaning it was filled or cancelled)
+            # The expected Sell order is at the next_sell_price
+            sell_order_open = any(
+                order['side'] == 'sell' and 
+                Decimal(str(order['price'])).quantize(quantizer_price) == next_sell_price.quantize(quantizer_price)
+                for order in open_orders
+            )
+            
+            if next_sell_price and not sell_order_open:
+                # A Sell order was filled (or cancelled), place a new Buy order at the next point down
+                buy_price = next_sell_price - grid_step
+                
+                # Check if the buy price is within the lower bound
+                if buy_price >= lower_bound:
+                    # Place the Buy Limit Order
+                    buy_amount_base = amount_per_order / buy_price
+                    
+                    # Apply precision rounding
+                    quantizer_amount = Decimal(f'1e-{amount_precision}')
+                    buy_amount_base = buy_amount_base.quantize(quantizer_amount, rounding=ROUND_HALF_UP)
+                    
+                    # Convert Decimal back to float for ccxt
+                    buy_price_float = float(buy_price.quantize(quantizer_price, rounding=ROUND_HALF_UP))
+                    buy_amount_float = float(buy_amount_base)
+                    
+                    try:
+                        await exchange.create_limit_buy_order(symbol, buy_amount_float, buy_price_float)
+                        await application.bot.send_message(user_id, f"🛒 **شبكة {grid_id} (BUY)**\n\nتم تنفيذ أمر بيع، ووضع أمر شراء جديد عند: {buy_price_float:.{price_precision}f}")
+                    except Exception as e:
+                        await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر الشراء عند {buy_price_float}: {e}")
+                        
+                # Also, place a new Sell order at the point above the filled Sell order (if within upper bound)
+                new_sell_price = next_sell_price + grid_step
+                if new_sell_price <= upper_bound:
+                    sell_amount_base = amount_per_order / new_sell_price # Approximate amount
+                    
+                    # Apply precision rounding
+                    quantizer_amount = Decimal(f'1e-{amount_precision}')
+                    sell_amount_base = sell_amount_base.quantize(quantizer_amount, rounding=ROUND_HALF_UP)
+                    
+                    # Convert Decimal back to float for ccxt
+                    new_sell_price_float = float(new_sell_price.quantize(quantizer_price, rounding=ROUND_HALF_UP))
+                    sell_amount_float = float(sell_amount_base)
+                    
+                    try:
+                        await exchange.create_limit_sell_order(symbol, sell_amount_float, new_sell_price_float)
+                        await application.bot.send_message(user_id, f"📈 **شبكة {grid_id} (SELL)**\n\nتم وضع أمر بيع جديد عند: {new_sell_price_float:.{price_precision}f}")
+                    except Exception as e:
+                        await application.bot.send_message(user_id, f"⚠️ **شبكة {grid_id} (ERROR)**\n\nفشل وضع أمر البيع عند {new_sell_price_float}: {e}")
+                        
         except Exception as e:
-            print(f"Global Grid Monitoring Error: {e}")
-            await asyncio.sleep(60) # Sleep longer on global error
+            print(f"Error monitoring grid {grid_id}: {e}")
+            # Send a message to the user about the critical error
+            try:
+                await application.bot.send_message(user_id, f"🚨 **خطأ فادح في مراقبة الشبكة {grid_id}**\n\nالخطأ: {type(e).__name__}: {e}\n\nسيتم إيقاف مراقبة هذه الشبكة مؤقتاً.")
+            except Exception as msg_e:
+                print(f"Failed to send error message to user {user_id}: {msg_e}")
+        finally:
+            if 'exchange' in locals():
+                await exchange.close()
+                
+        # Sleep for a short interval before checking again
+        await asyncio.sleep(5) 
+        
+    # Remove the task from the global dictionary when it finishes
+    if grid_id in active_grid_tasks:
+        del active_grid_tasks[grid_id]
+
+async def start_grid_monitoring(application: Application, grid_id: int):
+    """Starts a new monitoring task for a specific grid."""
+    if grid_id not in active_grid_tasks:
+        task = asyncio.create_task(grid_monitoring_task(application, grid_id))
+        active_grid_tasks[grid_id] = task
+        print(f"Started monitoring task for grid {grid_id}")
+
+async def stop_grid_monitoring(grid_id: int):
+    """Stops the monitoring task for a specific grid."""
+    if grid_id in active_grid_tasks:
+        task = active_grid_tasks[grid_id]
+        task.cancel()
+        del active_grid_tasks[grid_id]
+        print(f"Stopped monitoring task for grid {grid_id}")
+
+async def global_grid_manager_loop(application: Application):
+    """Manages the lifecycle of all grid monitoring tasks."""
+    while True:
+        try:
+            # Fetch all active grids from the database
+            active_grids = await get_active_grids()
+            active_grid_ids = {grid['id'] for grid in active_grids}
+            
+            # Start tasks for new active grids
+            for grid_id in active_grid_ids:
+                if grid_id not in active_grid_tasks:
+                    await start_grid_monitoring(application, grid_id)
+                    
+            # Stop tasks for grids that are no longer active
+            tasks_to_stop = [grid_id for grid_id in active_grid_tasks if grid_id not in active_grid_ids]
+            for grid_id in tasks_to_stop:
+                await stop_grid_monitoring(grid_id)
+                
+        except Exception as e:
+            print(f"Global Grid Manager Error: {e}")
+            
+        # Check for new/stopped grids every 60 seconds
+        await asyncio.sleep(60)
+
+# --- END GRID MONITORING LOGIC (Refactored) ---
 
 # MAIN FUNCTION
 def main() -> None:
@@ -1761,12 +1827,12 @@ def main() -> None:
     # === START POLLING BOT ===
     print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
     
-    # Start the grid monitoring loop after the event loop is running
-    async def post_init_callback(application: Application):
-        asyncio.create_task(grid_monitoring_loop(application))
-        
-    # The post_init argument is not supported in this version. We will use the application.post_init hook instead.
-    application.post_init = post_init_callback
+	        # Start the global grid manager loop after the event loop is running
+	    async def post_init_callback(application: Application):
+	        asyncio.create_task(global_grid_manager_loop(application))
+	        
+	    # The post_init argument is not supported in this version. We will use the application.post_init hook instead.
+	    application.post_init = post_init_callback
     
     application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
 
