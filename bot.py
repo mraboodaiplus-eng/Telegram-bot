@@ -151,7 +151,7 @@ def initialize_exchange(exchange_id, api_key, api_secret):
         raise ValueError("Exchange ID is missing. Please use /set_api to select an exchange.")
         
     # Get the exchange class from ccxt dynamically based on the user's exchange_id
-    try:
+            try:
         exchange_class = getattr(ccxt, exchange_id)
     except AttributeError:
         raise ValueError(f"Unsupported exchange: {exchange_id}. Please select a valid exchange.")
@@ -198,7 +198,7 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
                     if ticker and ticker.get('last') is not None:
                         # AVOID TELEGRAM MESSAGE DELAY: Only return, the main function will handle the success message
                         return
-                except Exception:
+            except Exception:
                     # If ticker fails, it might be listed but not yet tradable, continue waiting
                     pass
                     
@@ -292,19 +292,19 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         # 2. Wait for Order to be Filled and Get Execution Details
         await update.message.reply_text("🔍 [STEP 2/3] Waiting for order to be filled and getting execution details...")
         
-	        # CRITICAL FIX: In Sniping Mode, we assume the Market Order is filled instantly.
-	        # We skip the polling loop to save critical time. We only fetch the order once.
-	        order_details = await exchange.fetch_order(order_id, symbol)
-	        
-	        # CRITICAL FIX: If the order is not filled instantly (e.g., due to low liquidity or exchange delay), 
-	        # we cancel it immediately to avoid hanging and raise an error.
-	        if order_details.get('status') not in ['closed', 'filled']:
-	            # Cancel the order if it's still open and failed to fill
-	            try:
-	                await exchange.cancel_order(order_id, symbol)
-	            except Exception:
-	                pass # Ignore cancel errors
-	            raise ccxt.ExchangeError(f"Buy order failed to fill instantly. Final status: {order_details.get('status') if order_details else 'Unknown'}")
+        # CRITICAL FIX: In Sniping Mode, we assume the Market Order is filled instantly.
+        # We skip the polling loop to save critical time. We only fetch the order once.
+        order_details = await exchange.fetch_order(order_id, symbol)
+        
+        # CRITICAL FIX: If the order is not filled instantly (e.g., due to low liquidity or exchange delay), 
+        # we cancel it immediately to avoid hanging and raise an error.
+        if order_details.get('status') not in ['closed', 'filled']:
+            # Cancel the order if it's still open and failed to fill
+            try:
+                await exchange.cancel_order(order_id, symbol)
+            except Exception:
+                pass # Ignore cancel errors
+            raise ccxt.ExchangeError(f"Buy order failed to fill instantly. Final status: {order_details.get('status') if order_details else 'Unknown'}")
             
         # Extract execution details
         avg_price = float(order_details.get('average') or 0)
