@@ -256,11 +256,17 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         order_type = params.get('order_type', 'market')
         order_price = params.get('order_price')
 
-        # Override to Market Order if Sniping Mode is active
-        if context.user_data.get('sniping_mode'):
+        # CRITICAL FIX: Force Market Order for Sniping Mode
+        is_sniping = context.user_data.get('sniping_mode')
+        
+        if is_sniping:
             if order_type == 'limit':
                 await update.message.reply_text("⚠️ [WARNING] تم تحويل أمر التداول إلى **أمر سوق (Market Order)** لضمان السرعة القصوى في وضع القنص.")
             order_type = 'market'
+            order_price = None # Market orders do not use price
+            
+        # CRITICAL FIX: For Market Buy Orders, price must be None in create_order
+        if order_type == 'market':
             order_price = None
         
         
@@ -290,7 +296,9 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         if amount_to_buy <= 0:
             raise ccxt.ExchangeError(f"Calculated amount to buy ({amount_to_buy}) is zero or less. Check minimum order size.")
             
-        await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type.upper()} Buy Order for {amount_to_buy:.6f} {market['base']} (Cost: {amount_usdt} USDT)...")
+        # CRITICAL FIX: Use Market or Limit in the message based on the final order_type
+        order_type_display = 'MARKET' if order_type == 'market' else 'LIMIT'
+        await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type_display} Buy Order for {amount_to_buy:.6f} {market['base']} (Cost: {amount_usdt} USDT)...")
         
         # CRITICAL FIX: Place the order using 'amount' instead of 'cost' in params
         market_buy_order = await exchange.create_order(
@@ -604,9 +612,15 @@ async def sniping_and_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         await temp_exchange.close()
 
     # 2. Execute trade (This will initialize a new exchange with user's keys)
+    # CRITICAL FIX: Set sniping_mode to True before calling execute_trade
+    context.user_data['sniping_mode'] = True
+    
     # AVOID TELEGRAM MESSAGE DELAY: Remove the success message here to gain a few milliseconds
     # await update.message.reply_text(f"✅ [SUCCESS] {params['symbol']} is now listed! Proceeding to trade execution...")
     await execute_trade(update, context, params) 
+    
+    # CRITICAL FIX: Clear sniping_mode after the trade is executed
+    context.user_data['sniping_mode'] = False
 
 
 # --- SUBSCRIPTION AND API KEY HANDLERS ---
