@@ -284,7 +284,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             raise ccxt.ExchangeError("Exchange returned a None response for the buy order. Check API keys and permissions.")
             
         # CRITICAL FIX: Ensure the order was placed successfully and has an ID
-        if not market_buy_order.get('id'):
+        # We must also check if the order is a dictionary before calling .get()
+        if not isinstance(market_buy_order, dict) or not market_buy_order.get('id'):
             raise ccxt.ExchangeError("Failed to place market buy order. Order response is incomplete or missing ID.")
             
         order_id = market_buy_order['id']
@@ -296,6 +297,10 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         # We skip the polling loop to save critical time. We only fetch the order once.
         order_details = await exchange.fetch_order(order_id, symbol)
         
+        # CRITICAL FIX: If fetch_order returns None (e.g., order not found or exchange error), we must handle it.
+        if order_details is None:
+            raise ccxt.ExchangeError(f"Failed to fetch order details for ID {order_id}. Order might have been rejected or is missing.")
+            
         # CRITICAL FIX: If the order is not filled instantly (e.g., due to low liquidity or exchange delay), 
         # we cancel it immediately to avoid hanging and raise an error.
         if order_details.get('status') not in ['closed', 'filled']:
@@ -339,9 +344,6 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         precision = market['precision']['amount']
         
         import math
-        # Round down the filled amount to the correct precision
-        filled_amount_precise = math.floor(filled_amount * (10**precision)) / (10**precision)
-        
         # CRITICAL FIX: Get the actual available balance after the buy order to account for fees
         base_currency = market['base'] # e.g., 'ALU'
         
@@ -349,8 +351,12 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         balance = await exchange.fetch_balance()
         available_amount = balance.get(base_currency, {}).get('free', 0)
         
+        # CRITICAL FIX: Round the amount to sell to the correct precision before placing the order
         # Use the minimum of the calculated filled amount and the actual available balance
-        amount_to_sell = min(filled_amount_precise, available_amount)
+        amount_to_sell_raw = min(filled_amount, available_amount)
+        
+        # Round down the amount to sell to the correct precision
+        amount_to_sell = math.floor(amount_to_sell_raw * (10**precision)) / (10**precision)
         
         if amount_to_sell <= 0:
             raise ccxt.InsufficientFunds(f"Insufficient available balance ({available_amount} {base_currency}) to place the sell order after fees.")
