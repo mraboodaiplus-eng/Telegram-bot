@@ -187,11 +187,21 @@ async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, e
     
     while True:
         try:
-            ticker = await exchange.fetch_ticker(symbol)
-            if ticker and ticker.get('last') is not None:
-                # AVOID TELEGRAM MESSAGE DELAY: Only return, the main function will handle the success message
-                return
-        except (ccxt.BadSymbol, ccxt.ExchangeError):
+            # CRITICAL FIX: Use fetch_markets to check for symbol existence, which is often faster and less rate-limited than fetch_ticker
+            markets = await exchange.fetch_markets()
+            market_symbols = [m['symbol'] for m in markets]
+            
+            if symbol in market_symbols:
+                # Symbol is listed, now check if it's tradable by fetching the ticker once
+                try:
+                    ticker = await exchange.fetch_ticker(symbol)
+                    if ticker and ticker.get('last') is not None:
+                        # AVOID TELEGRAM MESSAGE DELAY: Only return, the main function will handle the success message
+                        return
+                except Exception:
+                    # If ticker fails, it might be listed but not yet tradable, continue waiting
+                    pass
+                    
             # The symbol is not listed yet, wait and try again
             await asyncio.sleep(SNIPING_DELAY)
         except Exception as e:
@@ -264,7 +274,7 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             side='buy',
             amount=None,
             price=order_price, # Only used for limit order
-            params={'cost': amount_usdt, 'createMarketBuyOrderRequiresPrice': False} # Use 'cost' parameter to specify amount in quote currency (USDT)
+            params={'cost': amount_usdt, 'createMarketBuyOrderRequiresPrice': False}
         )
         
         # CRITICAL FIX: The error 'NoneType' object has no attribute 'find' 
@@ -282,25 +292,19 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         # 2. Wait for Order to be Filled and Get Execution Details
         await update.message.reply_text("🔍 [STEP 2/3] Waiting for order to be filled and getting execution details...")
         
-        # Polling loop to wait for the order to be filled (Optimized for speed)
-        order_details = None
-        for _ in range(100): # Try for a maximum of 100 * 0.03 = 3 seconds
-            try:
-                order_details = await exchange.fetch_order(order_id, symbol)
-                if order_details.get('status') in ['closed', 'filled']:
-                    break
-            except Exception:
-                # Ignore temporary errors during polling
-                pass
-            await asyncio.sleep(0.03) # High-speed polling
-            
-        if not order_details or order_details.get('status') not in ['closed', 'filled']:
-            # Cancel the order if it's still open and failed to fill
-            try:
-                await exchange.cancel_order(order_id, symbol)
-            except Exception:
-                pass # Ignore cancel errors
-            raise ccxt.ExchangeError(f"Buy order failed to fill within the time limit. Final status: {order_details.get('status') if order_details else 'Unknown'}")
+	        # CRITICAL FIX: In Sniping Mode, we assume the Market Order is filled instantly.
+	        # We skip the polling loop to save critical time. We only fetch the order once.
+	        order_details = await exchange.fetch_order(order_id, symbol)
+	        
+	        # CRITICAL FIX: If the order is not filled instantly (e.g., due to low liquidity or exchange delay), 
+	        # we cancel it immediately to avoid hanging and raise an error.
+	        if order_details.get('status') not in ['closed', 'filled']:
+	            # Cancel the order if it's still open and failed to fill
+	            try:
+	                await exchange.cancel_order(order_id, symbol)
+	            except Exception:
+	                pass # Ignore cancel errors
+	            raise ccxt.ExchangeError(f"Buy order failed to fill instantly. Final status: {order_details.get('status') if order_details else 'Unknown'}")
             
         # Extract execution details
         avg_price = float(order_details.get('average') or 0)
