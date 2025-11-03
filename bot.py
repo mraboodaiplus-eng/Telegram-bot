@@ -1215,25 +1215,25 @@ async def create_grid_orders(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
             
         # 4. Save Grid to Database
-	        # Convert Decimal back to float for database storage (assuming DB uses float/real)
-	        grid_id = await add_new_grid(
-	            user_id, 
-	            symbol, 
-	            float(lower_bound), 
-	            float(upper_bound), 
-	            num_grids, 
-	            float(amount_per_order)
-	        )
-	        
-	        await update.message.reply_text(
-	            f"✅ **تم إنشاء شبكة التداول بنجاح!**\n"
-	            f"معرف الشبكة: **{grid_id}**\n"
-	            f"تم وضع **{len(placed_orders)}** أمر شراء مبدئي.\n\n"
-	            "**بدء المراقبة:** سيقوم البوت الآن بمراقبة هذه الشبكة. عند تنفيذ أي أمر شراء، سيقوم البوت تلقائياً بوضع أمر بيع محدد (Limit Sell) عند نقطة الشبكة التالية."
-	        )
-	        
-	        # CRITICAL FIX: Start the monitoring task for the new grid
-	        await start_grid_monitoring(context.application, grid_id)
+        # Convert Decimal back to float for database storage (assuming DB uses float/real)
+        grid_id = await add_new_grid(
+            user_id, 
+            symbol, 
+            float(lower_bound), 
+            float(upper_bound), 
+            num_grids, 
+            float(amount_per_order)
+        )
+        
+        await update.message.reply_text(
+            f"✅ **تم إنشاء شبكة التداول بنجاح!**\n"
+            f"معرف الشبكة: **{grid_id}**\n"
+            f"تم وضع **{len(placed_orders)}** أمر شراء مبدئي.\n\n"
+            "**بدء المراقبة:** سيقوم البوت الآن بمراقبة هذه الشبكة. عند تنفيذ أي أمر شراء، سيقوم البوت تلقائياً بوضع أمر بيع محدد (Limit Sell) عند نقطة الشبكة التالية."
+        )
+        
+        # CRITICAL FIX: Start the monitoring task for the new grid
+        await start_grid_monitoring(context.application, grid_id)
         
     except Exception as e:
         await update.message.reply_text(f"🚨 [CRITICAL ERROR] حدث خطأ أثناء إنشاء الشبكة: {type(e).__name__}: {e}")
@@ -1827,12 +1827,12 @@ def main() -> None:
     # === START POLLING BOT ===
     print("Bot is running in Polling mode... Send /start to the bot on Telegram.")
     
-	        # Start the global grid manager loop after the event loop is running
-	    async def post_init_callback(application: Application):
-	        asyncio.create_task(global_grid_manager_loop(application))
-	        
-	    # The post_init argument is not supported in this version. We will use the application.post_init hook instead.
-	    application.post_init = post_init_callback
+    # Start the global grid manager loop after the event loop is running
+    async def post_init_callback(application: Application):
+        asyncio.create_task(global_grid_manager_loop(application))
+        
+    # The post_init argument is not supported in this version. We will use the application.post_init hook instead.
+    application.post_init = post_init_callback
     
     application.run_polling(poll_interval=1.0, allowed_updates=Update.ALL_TYPES)
 
