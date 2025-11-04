@@ -825,18 +825,17 @@ async def select_exchange_callback(update: Update, context: ContextTypes.DEFAULT
     context.user_data['exchange_id'] = exchange_id
     
     # Edit the original message to show the selection and ask for the API key
-    await query.edit_message_text(
-        f"✅ [اختيار المنصة] تم اختيار منصة **{exchange_id.upper()}**.\n\n"
-        "🛠️ [إعداد API] يرجى إرسال مفتاح API الخاص بك الآن."
-    )
-    
     # CRITICAL FIX: If Bitget is selected, we need to ask for the Trading Password
     if exchange_id == 'bitget':
         await query.edit_message_text(
             f"✅ [اختيار المنصة] تم اختيار منصة **{exchange_id.upper()}**.\n\n"
             "🛠️ [إعداد API] يرجى إرسال مفتاح API الخاص بك الآن."
         )
-        return WAITING_FOR_API_KEY
+    else:
+        await query.edit_message_text(
+            f"✅ [اختيار المنصة] تم اختيار منصة **{exchange_id.upper()}**.\n\n"
+            "🛠️ [إعداد API] يرجى إرسال مفتاح API الخاص بك الآن."
+        )
     
     return WAITING_FOR_API_KEY
 
