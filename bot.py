@@ -144,7 +144,7 @@ SELECT_EXCHANGE, WAITING_FOR_API_KEY, WAITING_FOR_API_SECRET = range(51, 54)
 
 # --- EXCHANGE TRADING LOGIC ---
 
-async def initialize_exchange(exchange_id, api_key, api_secret):
+async def initialize_exchange(exchange_id, api_key, api_secret, password=None):
     """Initializes the ccxt exchange object with provided API keys and the user's exchange_id."""
     
     if not exchange_id:
@@ -162,12 +162,18 @@ async def initialize_exchange(exchange_id, api_key, api_secret):
     if not api_key or not api_secret:
         raise ValueError("API Key or Secret is missing. Please use /set_api.")
         
-    return exchange_class({
+    params = {
         'apiKey': api_key,
         'secret': api_secret,
         'options': {'defaultType': 'spot'}, # Assuming spot trading for simplicity
         'enableRateLimit': True,
-    })
+    }
+    
+    # CRITICAL FIX: Bitget requires a password parameter
+    if exchange_id == 'bitget' and password:
+        params['password'] = password
+        
+    return exchange_class(params)
 
 async def wait_for_listing(update: Update, context: ContextTypes.DEFAULT_TYPE, exchange, symbol):
     """Waits for the symbol to be listed on the exchange (Sniping Mode)."""
@@ -232,7 +238,8 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
         return  
     
     try:
-        exchange = await initialize_exchange(exchange_id, api_key, api_secret)
+        password = user_record.get('password') # CRITICAL FIX: Get password from user record
+        exchange = await initialize_exchange(exchange_id, api_key, api_secret, password)
     except ValueError as e:
         await update.message.reply_text(f"🚨 [ERROR] خطأ في تهيئة الاتصال: {e}")
         return
@@ -823,6 +830,14 @@ async def select_exchange_callback(update: Update, context: ContextTypes.DEFAULT
         "🛠️ [إعداد API] يرجى إرسال مفتاح API الخاص بك الآن."
     )
     
+    # CRITICAL FIX: If Bitget is selected, we need to ask for the Trading Password
+    if exchange_id == 'bitget':
+        await query.edit_message_text(
+            f"✅ [اختيار المنصة] تم اختيار منصة **{exchange_id.upper()}**.\n\n"
+            "🛠️ [إعداد API] يرجى إرسال مفتاح API الخاص بك الآن."
+        )
+        return WAITING_FOR_API_KEY
+    
     return WAITING_FOR_API_KEY
 
 async def set_api_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -868,6 +883,17 @@ async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     # Store the API key temporarily in user_data
     context.user_data['api_key'] = api_key
     
+    exchange_id = context.user_data.get('exchange_id')
+    
+    # CRITICAL FIX: If Bitget is selected, ask for the Trading Password next
+    if exchange_id == 'bitget':
+        await update.message.reply_text(
+            "🔑 [إعداد API] تم حفظ مفتاح API.\n\n"
+            "🔒 **[مطلوب لـ Bitget]** يرجى إرسال **كلمة مرور التداول (Trading Password)** الخاصة بك الآن."
+        )
+        # We will use WAITING_FOR_API_SECRET state to capture the password
+        return WAITING_FOR_API_SECRET
+    
     await update.message.reply_text(
         "🔑 [إعداد API] تم حفظ مفتاح API. يرجى إرسال مفتاح API السري (API Secret) الآن."
     )
@@ -875,25 +901,45 @@ async def set_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     return WAITING_FOR_API_SECRET
 
 async def set_api_secret(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Stores the API secret and saves all data (exchange, key, secret) to the database."""
+    """Stores the API secret or Trading Password and saves all data to the database."""
     from database import get_user_by_api_key # Local import to fix the recurring issue
     
     user_id = update.effective_user.id
-    api_secret = update.message.text.strip()
-    api_key = context.user_data.get('api_key')
     exchange_id = context.user_data.get('exchange_id')
     
-    if not api_key or not exchange_id:
-        await update.message.reply_text("🚨 [ERROR] حدث خطأ. يرجى إعادة المحاولة باستخدام /set_api.")
-        return ConversationHandler.END
+    # CRITICAL FIX: Handle Bitget Trading Password
+    if exchange_id == 'bitget' and 'api_secret' not in context.user_data:
+        # This is the Trading Password
+        context.user_data['password'] = update.message.text.strip()
         
+        # Now ask for the API Secret
+        await update.message.reply_text(
+            "🔒 [إعداد API] تم حفظ كلمة مرور التداول.\n\n"
+            "🔑 يرجى إرسال مفتاح API السري (API Secret) الآن."
+        )
+        # We will use the same state to capture the secret next
+        context.user_data['api_secret'] = 'temp_placeholder' # Placeholder to indicate we are now waiting for the secret
+        return WAITING_FOR_API_SECRET
+        
+    # This is the API Secret (for all exchanges, or the second step for Bitget)
+    api_secret = update.message.text.strip()
+    api_key = context.user_data.get('api_key')
+    password = context.user_data.get('password') # Will be None for non-Bitget
+    
+    # Clear the temporary placeholder if it exists
+    if context.user_data.get('api_secret') == 'temp_placeholder':
+        del context.user_data['api_secret']
+        
+    # Final save to database
+    from database import update_api_keys
+    
     # Ensure user exists in DB before attempting to update keys
     await add_new_user(user_id) 
     
     try:
         # Save to database
         # NOTE: update_api_keys now accepts exchange_id as the second argument
-        await update_api_keys(user_id, exchange_id, api_key, api_secret)
+        await update_api_keys(user_id, exchange_id, api_key, api_secret, password) # CRITICAL FIX: Pass password
         
         await update.message.reply_text(
             f"✅ [نجاح] تم حفظ مفاتيح API لمنصة **{exchange_id.upper()}** بنجاح! جاري التحقق من الصلاحيات..."
