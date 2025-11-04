@@ -270,6 +270,9 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             order_price = None
         
         
+        # CRITICAL FIX: Use Market or Limit in the message based on the final order_type
+        order_type_display = 'MARKET' if order_type == 'market' else 'LIMIT'
+        
         # 1. Get current price and market info
         await exchange.load_markets()
         market = exchange.markets.get(symbol)
@@ -298,16 +301,29 @@ async def execute_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, para
             
         # CRITICAL FIX: Use Market or Limit in the message based on the final order_type
         order_type_display = 'MARKET' if order_type == 'market' else 'LIMIT'
-        await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type_display} Buy Order for {amount_to_buy:.6f} {market['base']} (Cost: {amount_usdt} USDT)...")
         
-        # CRITICAL FIX: Place the order using 'amount' instead of 'cost' in params
+        # --- FLEXIBLE ORDER PLACEMENT LOGIC (Bitget Fix) ---
+        amount_for_order = amount_to_buy
+        order_params = {}
+        
+        # CRITICAL FIX: Bitget-specific logic for Market Buy Orders
+        if exchange.id == 'bitget' and order_type == 'market':
+            # Bitget requires passing the cost as 'amount' and using the special param
+            amount_for_order = amount_usdt
+            order_params = {'createMarketBuyOrderRequiresPrice': False}
+            
+            await update.message.reply_text("⚠️ [BITGET FIX] تم تطبيق الحل الخاص لمنصة Bitget لأمر السوق.")
+            
+        await update.message.reply_text(f"🛒 [STEP 1/3] Placing {order_type_display} Buy Order for {amount_for_order:.6f} {market['base'] if exchange.id != 'bitget' or order_type != 'market' else 'USDT'} (Cost: {amount_usdt} USDT)...")
+        
+        # CRITICAL FIX: Place the order using the calculated amount (or cost for Bitget market)
         market_buy_order = await exchange.create_order(
             symbol=symbol,
             type=order_type,
             side='buy',
-            amount=amount_to_buy, # Use calculated amount
+            amount=amount_for_order, # Use calculated amount (or cost for Bitget market)
             price=order_price, # Only used for limit order
-            params={} # Remove unnecessary 'cost' param
+            params=order_params
         )
         
         # CRITICAL FIX: The error 'NoneType' object has no attribute 'find' 
