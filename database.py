@@ -15,6 +15,7 @@ async def init_db():
                 exchange_id TEXT NULL,
                 api_key TEXT NULL,
                 api_secret TEXT NULL,
+                password TEXT NULL, -- CRITICAL FIX: Added for Bitget Trading Password
                 subscription_status TEXT DEFAULT 'inactive',
                 subscription_end_date DATETIME NULL,
                 language TEXT DEFAULT 'ar'
@@ -62,12 +63,12 @@ async def update_subscription_status(user_id, status, end_date=None):
         )
         await db.commit()
 
-async def update_api_keys(user_id, exchange_id, api_key, api_secret):
+async def update_api_keys(user_id, exchange_id, api_key, api_secret, password=None):
     """Updates a user's API keys and exchange ID."""
     async with aiosqlite.connect(DATABASE_NAME) as db:
         await db.execute(
-            "UPDATE users SET exchange_id = ?, api_key = ?, api_secret = ? WHERE user_id = ?",
-            (exchange_id, api_key, api_secret, user_id)
+            "UPDATE users SET exchange_id = ?, api_key = ?, api_secret = ?, password = ? WHERE user_id = ?",
+            (exchange_id, api_key, api_secret, password, user_id)
         )
         await db.commit()
 
