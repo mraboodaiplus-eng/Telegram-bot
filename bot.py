@@ -108,6 +108,9 @@ app = Flask(__name__)
 application = None
 
 # --- CONFIGURATION AND CONSTANTS ---
+
+# Dictionary to hold active early sniper tasks: {user_id: asyncio.Task}
+ACTIVE_EARLY_SNIPER_TASKS = {}
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
 # --- NEW: Generalizing Exchange ---
@@ -143,6 +146,137 @@ SELECT_EXCHANGE, WAITING_FOR_API_KEY, WAITING_FOR_API_SECRET = range(51, 54)
 
 
 # --- EXCHANGE TRADING LOGIC ---
+
+# --- EARLY API SNIPER LOGIC ---
+
+async def early_sniper_task(user_id, chat_id, exchange_id, application):
+    """Background task to monitor exchange API for new symbols."""
+    
+    # 1. Initialize a temporary exchange object for market fetching (no keys needed)
+    try:
+        exchange_class = getattr(ccxt, exchange_id)
+        exchange = exchange_class({
+            'options': {'defaultType': 'spot'},
+            'enableRateLimit': True,
+        })
+    except AttributeError:
+        # Send error message to user
+        await application.bot.send_message(chat_id, f"❌ [خطأ] المنصة {exchange_id} غير مدعومة.")
+        return
+    except Exception as e:
+        await application.bot.send_message(chat_id, f"❌ [خطأ] فشل تهيئة المنصة: {e}")
+        return
+
+    # 2. Get initial list of markets
+    try:
+        markets = await exchange.fetch_markets()
+        known_symbols = set(m['symbol'] for m in markets)
+        await application.bot.send_message(chat_id, f"✅ [القنص المبكر] بدأت مراقبة منصة **{exchange_id}** بـ {len(known_symbols)} رمز معروف. سيتم التنبيه عند اكتشاف أي رمز جديد.")
+    except Exception as e:
+        await application.bot.send_message(chat_id, f"❌ [خطأ] فشل جلب الأسواق الأولية من {exchange_id}: {e}")
+        await exchange.close()
+        return
+
+    # 3. Monitoring Loop
+    while True:
+        try:
+            # Check if the task has been cancelled
+            if asyncio.current_task().cancelled():
+                break
+                
+            await asyncio.sleep(5) # Check every 5 seconds
+
+            new_markets = await exchange.fetch_markets()
+            current_symbols = set(m['symbol'] for m in new_markets)
+            
+            # Find new symbols
+            new_symbols = current_symbols - known_symbols
+            
+            if new_symbols:
+                for symbol in new_symbols:
+                    # 4. Send Alert
+                    alert_message = (
+                        "🚨 **قنص مبكر ناجح!** 🚨\n\n"
+                        f"تم اكتشاف عملة جديدة على منصة **{exchange_id}**:\n\n"
+                        f"**الرمز:** `{symbol}`"
+                    )
+                    await application.bot.send_message(chat_id, alert_message)
+                    
+                # 5. Update the known list
+                known_symbols.update(new_symbols)
+                
+        except ccxt.NetworkError:
+            # Log the error but continue the loop
+            print(f"Network error during early sniper for user {user_id} on {exchange_id}. Retrying...")
+            await asyncio.sleep(10) # Wait longer on network error
+        except Exception as e:
+            # Log the error and stop the task for safety
+            error_message = f"❌ [خطأ فادح] توقف القنص المبكر بسبب خطأ غير متوقع: {e}"
+            await application.bot.send_message(chat_id, error_message)
+            break
+
+    # Cleanup
+    await exchange.close()
+    if user_id in ACTIVE_EARLY_SNIPER_TASKS:
+        del ACTIVE_EARLY_SNIPER_TASKS[user_id]
+    await application.bot.send_message(chat_id, f"🛑 [القنص المبكر] تم إيقاف مهمة المراقبة لمنصة **{exchange_id}**.")
+
+# --- COMMAND HANDLERS FOR EARLY SNIPER ---
+
+async def sniper_early_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Starts the Early API Sniper background task."""
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id
+    
+    # 1. Check Whitelist
+    if user_id not in WHITELISTED_USERS:
+        await update.message.reply_text("🚫 **وصول مرفوض.** هذا الأمر متاح فقط للمستخدمين المميزين (VIP).")
+        return
+
+    # 2. Check if already running
+    if user_id in ACTIVE_EARLY_SNIPER_TASKS and not ACTIVE_EARLY_SNIPER_TASKS[user_id].done():
+        await update.message.reply_text("⚠️ **القنص المبكر نشط بالفعل.** لإيقافه، استخدم الأمر /stop_sniper_early.")
+        return
+
+    # 3. Get User Data
+    user_record = await get_user(user_id)
+    if not user_record or not user_record.get('exchange_id'):
+        await update.message.reply_text("❌ **خطأ في الإعداد.** يرجى إعداد المنصة أولاً باستخدام الأمر /set_api.")
+        return
+        
+    exchange_id = user_record['exchange_id']
+    
+    # 4. Start the background task
+    # We pass the global application object to the task for sending messages
+    task = asyncio.create_task(early_sniper_task(user_id, chat_id, exchange_id, context.application))
+    ACTIVE_EARLY_SNIPER_TASKS[user_id] = task
+    
+    await update.message.reply_text(
+        f"🚀 **بدء القنص المبكر!**\n\n"
+        f"جاري مراقبة منصة **{exchange_id}** كل 5 ثوانٍ لاكتشاف العملات الجديدة في الـ API.\n"
+        f"سيتم إرسال تنبيه فوري عند الاكتشاف.\n"
+        f"لإيقاف المراقبة: /stop_sniper_early"
+    )
+
+async def stop_sniper_early_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Stops the Early API Sniper background task."""
+    user_id = update.effective_user.id
+    
+    # 1. Check Whitelist
+    if user_id not in WHITELISTED_USERS:
+        await update.message.reply_text("🚫 **وصول مرفوض.** هذا الأمر متاح فقط للمستخدمين المميزين (VIP).")
+        return
+
+    # 2. Check if running
+    if user_id in ACTIVE_EARLY_SNIPER_TASKS:
+        task = ACTIVE_EARLY_SNIPER_TASKS.pop(user_id)
+        if not task.done():
+            task.cancel()
+            await update.message.reply_text("🛑 **تم إيقاف القنص المبكر بنجاح.**")
+        else:
+            await update.message.reply_text("⚠️ **القنص المبكر كان متوقفاً بالفعل.**")
+    else:
+        await update.message.reply_text("⚠️ **لا يوجد مهمة قنص مبكر نشطة حالياً لإيقافها.**")
 
 async def initialize_exchange(exchange_id, api_key, api_secret, password=None):
     """Initializes the ccxt exchange object with provided API keys and the user's exchange_id."""
@@ -681,6 +815,71 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(message)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Sends a message with available commands."""
+    user_id = update.effective_user.id
+    
+    # 1. Get user data
+    user_record = await get_user(user_id)
+    lang = await get_user_language(user_id)
+    
+    # 2. Determine user type and welcome message
+    username = update.effective_user.username or update.effective_user.first_name
+    
+    # List of commands for VIP users (Owner, Abood, and other whitelisted)
+    vip_commands = [
+        get_text(user_id, 'cmd_trade', lang=lang),
+        get_text(user_id, 'cmd_sniping', lang=lang),
+        get_text(user_id, 'cmd_grid_trade', lang=lang),
+        get_text(user_id, 'cmd_stop_grid', lang=lang),
+        get_text(user_id, 'cmd_sniper_early', lang=lang),
+        get_text(user_id, 'cmd_stop_sniper_early', lang=lang),
+        get_text(user_id, 'cmd_cancel', lang=lang),
+        get_text(user_id, 'cmd_set_api', lang=lang),
+        get_text(user_id, 'cmd_status_bot', lang=lang),
+        get_text(user_id, 'cmd_support', lang=lang),
+    ]
+    
+    # List of commands for regular clients
+    client_commands = [
+        get_text(user_id, 'cmd_trade', lang=lang),
+        get_text(user_id, 'cmd_sniping', lang=lang),
+        get_text(user_id, 'cmd_grid_trade', lang=lang),
+        get_text(user_id, 'cmd_stop_grid', lang=lang),
+        get_text(user_id, 'cmd_cancel', lang=lang),
+        get_text(user_id, 'cmd_set_api', lang=lang),
+        get_text(user_id, 'cmd_status_sub', lang=lang),
+        get_text(user_id, 'cmd_support', lang=lang),
+    ]
+    
+    if user_id == OWNER_ID:
+        welcome_key = 'welcome_vip_owner'
+        commands_list = vip_commands
+    elif user_id == ABOOD_ID:
+        welcome_key = 'welcome_vip_abood'
+        commands_list = vip_commands
+    elif user_id in WHITELISTED_USERS:
+        welcome_key = 'welcome_vip_other'
+        commands_list = vip_commands
+    else:
+        welcome_key = 'welcome_client'
+        commands_list = client_commands
+        
+    # 3. Construct the message
+    welcome_message = get_text(user_id, welcome_key, lang=lang, username=username)
+    
+    # Add active sniper status to the message
+    sniper_status = ""
+    # Check the global dictionary for active tasks
+    # We need to import ACTIVE_EARLY_SNIPER_TASKS from bot.py itself, but since we are in bot.py, we can use it directly.
+    # However, to avoid a circular dependency issue if this file were split, it's safer to assume it's a global variable.
+    # Since it's defined at the top level, it should be accessible.
+    if user_id in ACTIVE_EARLY_SNIPER_TASKS and not ACTIVE_EARLY_SNIPER_TASKS[user_id].done():
+        sniper_status = "\n\n⚠️ **القنص المبكر نشط حالياً!** (/stop_sniper_early)"
+    
+    full_message = welcome_message + "\n\n" + "\n".join(commands_list) + sniper_status
+    
+    # 4. Send the message
+    await update.message.reply_text(full_message, parse_mode='Markdown')
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
     
@@ -1917,6 +2116,10 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("support", support_command))
+    
+    # New Handlers for Early Sniper
+    application.add_handler(CommandHandler("sniper_early", sniper_early_command))
+    application.add_handler(CommandHandler("stop_sniper_early", stop_sniper_early_command))
     application.add_handler(CommandHandler("cancel", simple_cancel_command))
     application.add_handler(CallbackQueryHandler(approve_subscription_callback, pattern='^approve_subscription_'))
     application.add_handler(grid_stop_conv_handler)
