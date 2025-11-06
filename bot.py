@@ -13,10 +13,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes, Conversation
 MESSAGES = {
     'ar': {
         'cancel_success': '❌ تم إلغاء العملية الحالية.',
-        'welcome_vip_owner': '👑 **تحية الإجلال، سيدي المدير العام** ({username}) 👑\n\nجميع الأنظمة والعمليات تحت إمرتكم المباشرة. الصلاحيات العليا مفعلة بالكامل.\n**الأوامر السيادية المتاحة:**',
-        'welcome_vip_abood': 'تم التحقق. أهلاً بك، سيد 👑Abood👑. تم تفعيل بروتوكول المؤسس V.I.P الخاص بك.\nجميع الأنظمة تحت سيطرتك الآن، مع وصول كامل ومجاني لجميع الميزات الحالية والمستقبلية.البوت في خدمة سيادتكم.\n\n**الأوامر التنفيذية المتاحة:**',
-        'welcome_vip_other': '👋 مرحباً بك يا {username} (المستخدم المميز)!\n**الأوامر المتاحة:**',
-        'welcome_client': '👋 مرحباً بك يا {username}!\n\nأهلاً بك في خدمة **LiveSniperBot** المجانية والمتميزة.\nالبوت يعمل على منصة تداول بنظام **اقتطاع الأرباح (10%)** على الصفقات الناجحة فقط.\nللبدء، يرجى إعداد مفاتيح API الخاصة بك وتفعيل خيار **السحب**.\n\n**الأوامر المتاحة:**',
+        'welcome_vip_owner': '👑 <b>تحية الإجلال، سيدي المدير العام</b> ({username}) 👑\n\nجميع الأنظمة والعمليات تحت إمرتكم المباشرة. الصلاحيات العليا مفعلة بالكامل.\n<b>الأوامر السيادية المتاحة:</b>',
+        'welcome_vip_abood': 'تم التحقق. أهلاً بك، سيد 👑Abood👑. تم تفعيل بروتوكول المؤسس V.I.P الخاص بك.\nجميع الأنظمة تحت سيطرتك الآن، مع وصول كامل ومجاني لجميع الميزات الحالية والمستقبلية.البوت في خدمة سيادتكم.\n\n<b>الأوامر التنفيذية المتاحة:</b>',
+        'welcome_vip_other': '👋 مرحباً بك يا {username} (المستخدم المميز)!\n<b>الأوامر المتاحة:</b>',
+        'welcome_client': '👋 مرحباً بك يا {username}!\n\nأهلاً بك في خدمة <b>LiveSniperBot</b> المجانية والمتميزة.\nالبوت يعمل على منصة تداول بنظام <b>اقتطاع الأرباح (10%)</b> على الصفقات الناجحة فقط.\nللبدء، يرجى إعداد مفاتيح API الخاصة بك وتفعيل خيار <b>السحب</b>.\n\n<b>الأوامر المتاحة:</b>',
         'cmd_trade': '/trade - 📈 تداول عادي (شراء وبيع)',
         'cmd_sniping': '/sniping - ⚡️ قنص عملة جديدة (انتظار الإدراج)',
         'cmd_grid_trade': '/grid_trade - 📊 بدء التداول الشبكي (الشبكة الآلية)',
@@ -26,21 +26,21 @@ MESSAGES = {
         'cmd_status_bot': '/status - ℹ️ عرض حالة البوت',
         'cmd_status_sub': '/status - ℹ️ عرض حالة الاشتراك',
         'cmd_support': '/support - 🤝 مركز الدعم والمساعدة',
-        'trade_start_title': '**📈 بدء التداول العادي**\n\nيرجى اختيار نوع الأمر الذي تريد تنفيذه:',
+        'trade_start_title': '<b>📈 بدء التداول العادي</b>\n\nيرجى اختيار نوع الأمر الذي تريد تنفيذه:',
         'trade_market_btn': '1. أمر السوق (Market)',
         'trade_limit_btn': '2. أمر محدد (Limit)',
-        'lang_select_title': '🌐 **اختر لغتك المفضلة / Select your preferred language:**',
+        'lang_select_title': '🌐 <b>اختر لغتك المفضلة / Select your preferred language:</b>',
         'lang_ar_btn': 'العربية 🇸🇦',
         'lang_en_btn': 'English 🇬🇧',
-        'lang_set_ar': '✅ تم اختيار اللغة **العربية** كلغة مفضلة لك.',
-        'lang_set_en': '✅ Language set to **English**.',
+        'lang_set_ar': '✅ تم اختيار اللغة <b>العربية</b> كلغة مفضلة لك.',
+        'lang_set_en': '✅ Language set to <b>English</b>.',
     },
     'en': {
         'cancel_success': '❌ Current operation has been cancelled.',
-        'welcome_vip_owner': '👑 **Greetings, General Manager** ({username}) 👑\n\nAll systems and operations are under your direct command. Full supreme authorities are enabled.\n**Available Sovereign Commands:**',
-        'welcome_vip_abood': 'Verified. Welcome, Lord 👑Abood👑. Your Founder V.I.P protocol is activated.\nAll systems are under your control now, with full and free access to all current and future features. The bot is at your service.\n\n**Available Executive Commands:**',
-        'welcome_vip_other': '👋 Welcome {username} (Premium User)!\n**Available Commands:**',
-        'welcome_client': '👋 Welcome {username}!\n\nWelcome to the free and premium **LiveSniperBot** service.\nThe bot operates on a trading platform with a **profit sharing (10%)** system on successful trades only.\nTo start, please set up your API keys and enable the **Withdrawal** option.\n\n**Available Commands:**',
+        'welcome_vip_owner': '👑 <b>Greetings, General Manager</b> ({username}) 👑\n\nAll systems and operations are under your direct command. Full supreme authorities are enabled.\n<b>Available Sovereign Commands:</b>',
+        'welcome_vip_abood': 'Verified. Welcome, Lord 👑Abood👑. Your Founder V.I.P protocol is activated.\nAll systems are under your control now, with full and free access to all current and future features. The bot is at your service.\n\n<b>Available Executive Commands:</b>',
+        'welcome_vip_other': '👋 Welcome {username} (Premium User)!\n<b>Available Commands:</b>',
+        'welcome_client': '👋 Welcome {username}!\n\nWelcome to the free and premium <b>LiveSniperBot</b> service.\nThe bot operates on a trading platform with a <b>profit sharing (10%)</b> system on successful trades only.\nTo start, please set up your API keys and enable the <b>Withdrawal</b> option.\n\n<b>Available Commands:</b>',
         'cmd_trade': '/trade - 📈 Normal Trade (Buy and Sell)',
         'cmd_sniping': '/sniping - ⚡️ Sniping a New Coin (Waiting for Listing)',
         'cmd_grid_trade': '/grid_trade - 📊 Start Grid Trading (Automated Grid)',
@@ -50,14 +50,14 @@ MESSAGES = {
         'cmd_status_bot': '/status - ℹ️ Show Bot Status',
         'cmd_status_sub': '/status - ℹ️ Show Subscription Status',
         'cmd_support': '/support - 🤝 Support and Help Center',
-        'trade_start_title': '**📈 Start Normal Trading**\n\nPlease choose the order type you want to execute:',
+        'trade_start_title': '<b>📈 Start Normal Trading</b>\n\nPlease choose the order type you want to execute:',
         'trade_market_btn': '1. Market Order',
         'trade_limit_btn': '2. Limit Order',
-        'lang_select_title': '🌐 **اختر لغتك المفضلة / Select your preferred language:**',
+        'lang_select_title': '🌐 <b>اختر لغتك المفضلة / Select your preferred language:</b>',
         'lang_ar_btn': 'العربية 🇸🇦',
         'lang_en_btn': 'English 🇬🇧',
-        'lang_set_ar': '✅ تم اختيار اللغة **العربية** كلغة مفضلة لك.',
-        'lang_set_en': '✅ Language set to **English**.',
+        'lang_set_ar': '✅ تم اختيار اللغة <b>العربية</b> كلغة مفضلة لك.',
+        'lang_set_en': '✅ Language set to <b>English</b>.',
     }
 }
 
@@ -171,7 +171,7 @@ async def early_sniper_task(user_id, chat_id, exchange_id, application):
     try:
         markets = await exchange.fetch_markets()
         known_symbols = set(m['symbol'] for m in markets)
-        await application.bot.send_message(chat_id, f"✅ [القنص المبكر] بدأت مراقبة منصة **{exchange_id}** بـ {len(known_symbols)} رمز معروف. سيتم التنبيه عند اكتشاف أي رمز جديد.")
+        await application.bot.send_message(chat_id, f"✅ [القنص المبكر] بدأت مراقبة منصة <b>{exchange_id}</b> بـ {len(known_symbols)} رمز معروف. سيتم التنبيه عند اكتشاف أي رمز جديد.", parse_mode='HTML')
     except Exception as e:
         await application.bot.send_message(chat_id, f"❌ [خطأ] فشل جلب الأسواق الأولية من {exchange_id}: {e}")
         await exchange.close()
@@ -196,11 +196,11 @@ async def early_sniper_task(user_id, chat_id, exchange_id, application):
                 for symbol in new_symbols:
                     # 4. Send Alert
                     alert_message = (
-                        "🚨 **قنص مبكر ناجح!** 🚨\n\n"
-                        f"تم اكتشاف عملة جديدة على منصة **{exchange_id}**:\n\n"
-                        f"**الرمز:** `{symbol}`"
+                        "🚨 <b>قنص مبكر ناجح!</b> 🚨\n\n"
+                        f"تم اكتشاف عملة جديدة على منصة <b>{exchange_id}</b>:\n\n"
+                        f"<b>الرمز:</b> <code>{symbol}</code>"
                     )
-                    await application.bot.send_message(chat_id, alert_message)
+                    await application.bot.send_message(chat_id, alert_message, parse_mode='HTML')
                     
                 # 5. Update the known list
                 known_symbols.update(new_symbols)
@@ -219,7 +219,7 @@ async def early_sniper_task(user_id, chat_id, exchange_id, application):
     await exchange.close()
     if user_id in ACTIVE_EARLY_SNIPER_TASKS:
         del ACTIVE_EARLY_SNIPER_TASKS[user_id]
-    await application.bot.send_message(chat_id, f"🛑 [القنص المبكر] تم إيقاف مهمة المراقبة لمنصة **{exchange_id}**.")
+    await application.bot.send_message(chat_id, f"🛑 [القنص المبكر] تم إيقاف مهمة المراقبة لمنصة <b>{exchange_id}</b>.", parse_mode='HTML')
 
 # --- COMMAND HANDLERS FOR EARLY SNIPER ---
 
@@ -230,18 +230,18 @@ async def sniper_early_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # 1. Check Whitelist
     if user_id not in WHITELISTED_USERS:
-        await update.message.reply_text("🚫 **وصول مرفوض.** هذا الأمر متاح فقط للمستخدمين المميزين (VIP).")
+        await update.message.reply_text("🚫 <b>وصول مرفوض.</b> هذا الأمر متاح فقط للمستخدمين المميزين (VIP).", parse_mode='HTML')
         return
 
     # 2. Check if already running
     if user_id in ACTIVE_EARLY_SNIPER_TASKS and not ACTIVE_EARLY_SNIPER_TASKS[user_id].done():
-        await update.message.reply_text("⚠️ **القنص المبكر نشط بالفعل.** لإيقافه، استخدم الأمر /stop_sniper_early.")
+        await update.message.reply_text("⚠️ <b>القنص المبكر نشط بالفعل.</b> لإيقافه، استخدم الأمر /stop_sniper_early.", parse_mode='HTML')
         return
 
     # 3. Get User Data
     user_record = await get_user(user_id)
     if not user_record or not user_record.get('exchange_id'):
-        await update.message.reply_text("❌ **خطأ في الإعداد.** يرجى إعداد المنصة أولاً باستخدام الأمر /set_api.")
+        await update.message.reply_text("❌ <b>خطأ في الإعداد.</b> يرجى إعداد المنصة أولاً باستخدام الأمر /set_api.", parse_mode='HTML')
         return
         
     exchange_id = user_record['exchange_id']
@@ -252,10 +252,11 @@ async def sniper_early_command(update: Update, context: ContextTypes.DEFAULT_TYP
     ACTIVE_EARLY_SNIPER_TASKS[user_id] = task
     
     await update.message.reply_text(
-        f"🚀 **بدء القنص المبكر!**\n\n"
-        f"جاري مراقبة منصة **{exchange_id}** كل 5 ثوانٍ لاكتشاف العملات الجديدة في الـ API.\n"
+        f"🚀 <b>بدء القنص المبكر!</b>\n\n"
+        f"جاري مراقبة منصة <b>{exchange_id}</b> كل 5 ثوانٍ لاكتشاف العملات الجديدة في الـ API.\n"
         f"سيتم إرسال تنبيه فوري عند الاكتشاف.\n"
-        f"لإيقاف المراقبة: /stop_sniper_early"
+        f"لإيقاف المراقبة: /stop_sniper_early",
+        parse_mode='HTML'
     )
 
 async def stop_sniper_early_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -264,7 +265,7 @@ async def stop_sniper_early_command(update: Update, context: ContextTypes.DEFAUL
     
     # 1. Check Whitelist
     if user_id not in WHITELISTED_USERS:
-        await update.message.reply_text("🚫 **وصول مرفوض.** هذا الأمر متاح فقط للمستخدمين المميزين (VIP).")
+        await update.message.reply_text("🚫 <b>وصول مرفوض.</b> هذا الأمر متاح فقط للمستخدمين المميزين (VIP).", parse_mode='HTML')
         return
 
     # 2. Check if running
@@ -272,11 +273,11 @@ async def stop_sniper_early_command(update: Update, context: ContextTypes.DEFAUL
         task = ACTIVE_EARLY_SNIPER_TASKS.pop(user_id)
         if not task.done():
             task.cancel()
-            await update.message.reply_text("🛑 **تم إيقاف القنص المبكر بنجاح.**")
+            await update.message.reply_text("🛑 <b>تم إيقاف القنص المبكر بنجاح.</b>", parse_mode='HTML')
         else:
-            await update.message.reply_text("⚠️ **القنص المبكر كان متوقفاً بالفعل.**")
+            await update.message.reply_text("⚠️ <b>القنص المبكر كان متوقفاً بالفعل.</b>", parse_mode='HTML')
     else:
-        await update.message.reply_text("⚠️ **لا يوجد مهمة قنص مبكر نشطة حالياً لإيقافها.**")
+        await update.message.reply_text("⚠️ <b>لا يوجد مهمة قنص مبكر نشطة حالياً لإيقافها.</b>", parse_mode='HTML')
 
 async def initialize_exchange(exchange_id, api_key, api_secret, password=None):
     """Initializes the ccxt exchange object with provided API keys and the user's exchange_id."""
@@ -874,12 +875,12 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # However, to avoid a circular dependency issue if this file were split, it's safer to assume it's a global variable.
     # Since it's defined at the top level, it should be accessible.
     if user_id in ACTIVE_EARLY_SNIPER_TASKS and not ACTIVE_EARLY_SNIPER_TASKS[user_id].done():
-        sniper_status = "\n\n⚠️ **القنص المبكر نشط حالياً!** (/stop_sniper_early)"
+        sniper_status = "\n\n⚠️ <b>القنص المبكر نشط حالياً!</b> (/stop_sniper_early)"
     
     full_message = welcome_message + "\n\n" + "\n".join(commands_list) + sniper_status
     
     # 4. Send the message
-    await update.message.reply_text(full_message, parse_mode='Markdown')
+    await update.message.reply_text(full_message, parse_mode='HTML')
     user_id = update.effective_user.id
     username = update.effective_user.username or update.effective_user.first_name
     
@@ -1773,8 +1774,9 @@ async def language_callback_handler(update: Update, context: ContextTypes.DEFAUL
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.edit_message_text(
-        "🌐 **اختر لغتك المفضلة / Select your preferred language:**",
-        reply_markup=reply_markup
+        "🌐 <b>اختر لغتك المفضلة / Select your preferred language:</b>",
+        reply_markup=reply_markup,
+        parse_mode='HTML'
     )
 
 async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1798,7 +1800,7 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     from database import update_user_language
     await update_user_language(user_id, language_code)
 
-    await query.edit_message_text(message_text)
+    await query.edit_message_text(message_text, parse_mode='HTML')
 
 # --- END LANGUAGE SELECTION HANDLERS ---
 
