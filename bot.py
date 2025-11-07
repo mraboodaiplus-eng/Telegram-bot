@@ -245,7 +245,6 @@ async def early_sniper_task(user_id, chat_id, exchange_id, application):
             
             if new_symbols:
                 for symbol in new_symbols:
-                    # 4. Send Alert
                     # 4. Send Interactive Alert
                     alert_message = (
                         "🚨 <b>فرصة قنص مبكر!</b> 🚨\n\n"
