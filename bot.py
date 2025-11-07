@@ -9,7 +9,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
+# from web3.middleware import geth_poa_middleware # Removed due to ImportError in web3 v6.x
 import datetime
 import time # Added for use in execute_trade
 from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
@@ -23,12 +23,17 @@ PANCAKESWAP_ROUTER_ADDRESS = '0x10ED43C718714eb63d5aA57B78B54704E256024E' # Panc
 WBNB_ADDRESS = '0xbb4CdB9eD5Bf308bB01BDdC0eFE8fA2741d248bB' # WBNB Contract Address
 SNIPE_AMOUNT_BNB = float(os.environ.get('SNIPE_AMOUNT_BNB', 0.01)) # كمية BNB للشراء (افتراضياً 0.01 BNB)
 
-# --- WEB3 SETUP ---
+    # --- WEB3 SETUP ---
 try:
     w3 = Web3(Web3.HTTPProvider(BSC_RPC_URL))
     # إذا كانت الشبكة تستخدم Proof of Authority (مثل BSC)، يجب إضافة هذا الميدل وير
     if w3.is_connected() and w3.eth.chain_id == 56: # 56 هو Chain ID لشبكة BSC
-        w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+        # محاولة استيراد geth_poa_middleware محلياً لتجنب خطأ الاستيراد العام
+        try:
+            from web3.middleware import geth_poa_middleware
+            w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+        except ImportError:
+            logging.warning("geth_poa_middleware not found in web3.middleware. Assuming PoA is not needed or handled internally.")
 except Exception as e:
     logging.error(f"Failed to connect to Web3 provider: {e}")
     w3 = None
