@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify
 import ccxt.async_support as ccxt
 import asyncio
 import os
+import logging
 import sys
 import json
 import re
