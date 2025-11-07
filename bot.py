@@ -9,7 +9,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
+from web3.middleware.geth_poa import geth_poa_middleware
 import datetime
 import time # Added for use in execute_trade
 from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
