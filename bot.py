@@ -6,7 +6,7 @@ import ccxt.async_support as ccxt
 import asyncio
 import os
 import logging
-from google import genai
+from google.generativeai import Client as genai_Client, types, GenerationConfig
 from googleapiclient.discovery import build
 import logging
 import sys
@@ -39,7 +39,7 @@ SYSTEM_PROMPT = (
 # --- GEMINI AI SETUP ---
 try:
     if GEMINI_API_KEY:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        gemini_client = genai_Client(api_key=GEMINI_API_KEY)
     else:
         logging.warning(
             "GEMINI_API_KEY not found. AI features will be disabled.")
@@ -549,7 +549,7 @@ async def voice_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> s
         # 4. Transcribe using Gemini
         prompt = "Transcribe this audio message. Output only the text."
         response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-1.5-flash',
             contents=[prompt, audio_file]
         )
 
@@ -589,14 +589,14 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return CHATTING_WITH_AI
 
     # 2. Prepare the model and tools
-    model = gemini_client.models.get('gemini-1.5-flash-latest')
+    model = gemini_client.models.get('gemini-1.5-flash')
     tools = [search_internet]
 
     # 3. Send the first request to the model
     try:
         response = model.generate_content(
             contents=[SYSTEM_PROMPT, user_prompt],
-            config=genai.types.GenerateContentConfig(tools=tools)
+            config=types.GenerateContentConfig(tools=tools)
         )
 
         # 4. Handle Function Calling
@@ -618,12 +618,12 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     contents=[
                         SYSTEM_PROMPT,
                         user_prompt,
-                        genai.types.Part.from_function_response(
+                        types.Part.from_function_response(
                             name=function_name,
                             response=function_response
                         )
                     ],
-                    config=genai.types.GenerateContentConfig(tools=tools),
+                    config=types.GenerateContentConfig(tools=tools),
                     stream=True  # Stream the final response
                 )
             else:
@@ -634,7 +634,7 @@ async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             # No function call, stream the response directly
             response = model.generate_content(
                 contents=[SYSTEM_PROMPT, user_prompt],
-                config=genai.types.GenerateContentConfig(tools=tools),
+                config=types.GenerateContentConfig(tools=tools),
                 stream=True
             )
 
