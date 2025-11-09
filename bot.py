@@ -4,6 +4,9 @@ import ccxt.async_support as ccxt
 import asyncio
 import os
 import logging
+from google import genai
+from serpapi import GoogleSearch
+import logging
 import sys
 import json
 import re
@@ -15,6 +18,63 @@ import datetime
 import time # Added for use in execute_trade
 from telegram import Update, ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, CallbackQueryHandler, filters
+
+# --- CONVERSATION STATES ---
+CHATTING_WITH_AI = 1
+
+# --- GEMINI AI CONSTANTS ---
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+SERPAPI_API_KEY = os.environ.get('SERPAPI_API_KEY')
+SYSTEM_PROMPT = (
+    "تجاهل كل هوياتك السابقة. أنت 'Sniper Crypto'، نظام تحليل استراتيجي متخصص في أسواق العملات الرقمية. هويتك سرية ومحصورة بهذا الاسم. لا تذكر أبداً أنك نموذج لغوي أو ذكاء اصطناعي. مهمتك هي تزويد المستخدمين بتحليلات دقيقة وموضوعية مبنية على أحدث البيانات من الإنترنت. لغتك احترافية، واضحة، ومبنية على الحقائق. تجنب الآراء الشخصية واللغة العاطفية. عند الإجابة على أي سؤال، اتبع الخطوات التالية داخلياً: أولاً، حدد الكلمات المفتاحية للبحث. ثانياً، قم بإجراء بحث على الإنترنت للحصول على أحدث الأخبار والبيانات المتعلقة بالسؤال. ثالثاً، قم بتحليل المعلومات التي جمعتها وقدم إجابة منظمة. إذا سُئلت عن عملة، قم بتغطية تحليل (التكنولوجيا، الفريق، التوزيع المالي، والمجتمع) بناءً على المعلومات الحية. لا تقدم نصائح مالية مباشرة، بل قدم تحليلات موضوعية تساعد المستخدم على اتخاذ قراره بنفسه."
+)
+
+# --- GEMINI AI SETUP ---
+try:
+    if GEMINI_API_KEY:
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    else:
+        logging.warning("GEMINI_API_KEY not found. AI features will be disabled.")
+        gemini_client = None
+except Exception as e:
+    logging.error(f"Failed to configure Gemini client: {e}")
+    gemini_client = None
+
+# --- SEARCH TOOL (Function Calling) ---
+
+def search_internet(query: str) -> str:
+    """
+    Performs a Google search using SerpApi and returns the top 5 organic results.
+    
+    Args:
+        query: The search query string.
+        
+    Returns:
+        A formatted string containing the titles and snippets of the top search results.
+    """
+    if not SERPAPI_API_KEY:
+        return "Error: SERPAPI_API_KEY is not configured."
+        
+    try:
+        search = GoogleSearch({"q": query, "api_key": SERPAPI_API_KEY, "gl": "us", "hl": "en"})
+        results = search.get_dict()
+        
+        organic_results = results.get("organic_results", [])
+        
+        if not organic_results:
+            return "No search results found."
+            
+        formatted_results = []
+        for i, result in enumerate(organic_results[:5]):
+            title = result.get("title", "No Title")
+            snippet = result.get("snippet", "No Snippet")
+            formatted_results.append(f"Result {i+1}: Title: {title}. Snippet: {snippet}")
+            
+        return "\n".join(formatted_results)
+        
+    except Exception as e:
+        logging.error(f"SerpApi search failed: {e}")
+        return f"Error during search: {e}"
 
 # --- WEB3 CONSTANTS ---
 # يجب تعيين هذه المتغيرات في بيئة التشغيل (Render)
@@ -388,6 +448,157 @@ async def find_contract_address(symbol: str) -> str | None:
         
     return None
 
+# --- VOICE MESSAGE PROCESSING ---
+
+async def voice_to_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str | None:
+    """
+    Downloads a voice message, converts it to text using Gemini API.
+    """
+    if not gemini_client:
+        await update.message.reply_text("❌ <b>خطأ:</b> ميزة الذكاء الاصطناعي غير مفعلة (GEMINI_API_KEY مفقود).", parse_mode='HTML')
+        return None
+        
+    try:
+        # 1. Download the voice file
+        voice_file = await context.bot.get_file(update.message.voice.file_id)
+        downloaded_file_path = f"/tmp/{voice_file.file_id}.ogg"
+        await voice_file.download_to_drive(downloaded_file_path)
+        
+        # 2. Convert OGG to MP3 (Gemini supports MP3, WAV, etc., but Telegram uses OGG)
+        # Note: This requires pydub and ffmpeg to be installed on the system.
+        # Since we are in a sandbox, we assume ffmpeg is available.
+        
+        # We will use the Gemini API's built-in audio processing capabilities
+        # which can handle various formats, including OGG.
+        
+        # 3. Upload file to Gemini
+        audio_file = gemini_client.files.upload(file=downloaded_file_path)
+        
+        # 4. Transcribe using Gemini
+        prompt = "Transcribe this audio message. Output only the text."
+        response = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[prompt, audio_file]
+        )
+        
+        # 5. Clean up
+        gemini_client.files.delete(name=audio_file.name)
+        os.remove(downloaded_file_path)
+        
+        return response.text
+        
+    except Exception as e:
+        logging.error(f"Voice to text conversion failed: {e}")
+        await update.message.reply_text(f"❌ <b>فشل تحويل الرسالة الصوتية:</b> {e}", parse_mode='HTML')
+        return None
+
+# --- AI CHAT LOGIC ---
+
+async def handle_ai_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handles text and voice messages in the AI chat state."""
+    if not gemini_client:
+        await update.message.reply_text("❌ <b>خطأ:</b> ميزة الذكاء الاصطناعي غير مفعلة (GEMINI_API_KEY مفقود).", parse_mode='HTML')
+        return CHATTING_WITH_AI
+        
+    chat_id = update.effective_chat.id
+    
+    # 1. Get the user's message text (from text or voice)
+    if update.message.text:
+        user_prompt = update.message.text
+    elif update.message.voice:
+        await update.message.reply_text("🎙️ <b>جاري تحويل الرسالة الصوتية إلى نص...</b>", parse_mode='HTML')
+        user_prompt = await voice_to_text(update, context)
+        if not user_prompt:
+            return CHATTING_WITH_AI
+        await update.message.reply_text(f"✅ <b>تم التحويل:</b> {user_prompt}", parse_mode='HTML')
+    else:
+        # Ignore other message types
+        return CHATTING_WITH_AI
+        
+    # 2. Prepare the model and tools
+    model = gemini_client.models.get('gemini-1.5-flash-latest')
+    tools = [search_internet]
+    
+    # 3. Send the first request to the model
+    try:
+        response = model.generate_content(
+            contents=[SYSTEM_PROMPT, user_prompt],
+            config=genai.types.GenerateContentConfig(tools=tools)
+        )
+        
+        # 4. Handle Function Calling
+        if response.function_calls:
+            # The model wants to call a function (search_internet)
+            function_call = response.function_calls[0]
+            function_name = function_call.name
+            function_args = dict(function_call.args)
+            
+            if function_name == "search_internet":
+                await context.bot.send_message(chat_id, "🔍 <b>جاري البحث في الإنترنت...</b>", parse_mode='HTML')
+                
+                # Execute the function
+                search_query = function_args.get('query')
+                function_response = search_internet(search_query)
+                
+                # Send the function result back to the model
+                response = model.generate_content(
+                    contents=[
+                        SYSTEM_PROMPT,
+                        user_prompt,
+                        genai.types.Part.from_function_response(
+                            name=function_name,
+                            response=function_response
+                        )
+                    ],
+                    config=genai.types.GenerateContentConfig(tools=tools),
+                    stream=True # Stream the final response
+                )
+            else:
+                # Should not happen with only one tool
+                await context.bot.send_message(chat_id, "❌ <b>خطأ:</b> طلب استدعاء دالة غير معروف.", parse_mode='HTML')
+                return CHATTING_WITH_AI
+        else:
+            # No function call, stream the response directly
+            response = model.generate_content(
+                contents=[SYSTEM_PROMPT, user_prompt],
+                config=genai.types.GenerateContentConfig(tools=tools),
+                stream=True
+            )
+            
+        # 5. Stream the final response to the user
+        full_response = ""
+        message = await context.bot.send_message(chat_id, "🤖 <b>Sniper Crypto:</b> جاري الكتابة...", parse_mode='HTML')
+        
+        for chunk in response:
+            if chunk.text:
+                full_response += chunk.text
+                # Edit the message to stream the response
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message.message_id,
+                        text=f"🤖 <b>Sniper Crypto:</b> {full_response}",
+                        parse_mode='HTML'
+                    )
+                except Exception as e:
+                    # Ignore errors like "Message is not modified"
+                    if "Message is not modified" not in str(e):
+                        logging.warning(f"Error editing message: {e}")
+                        
+        # Final edit to ensure the full response is displayed
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=message.message_id,
+            text=f"🤖 <b>Sniper Crypto:</b> {full_response}",
+            parse_mode='HTML'
+        )
+        
+    except Exception as e:
+        logging.error(f"Gemini AI processing failed: {e}")
+        await context.bot.send_message(chat_id, f"❌ <b>خطأ في معالجة الذكاء الاصطناعي:</b> {e}", parse_mode='HTML')
+        
+    return CHATTING_WITH_AI
+
 # --- SNIPE EXECUTION LOGIC ---
 
 async def execute_auto_snipe(chat_id: int, symbol: str, contract_address: str, application: Application):
@@ -536,6 +747,31 @@ async def handle_sniper_callback(update: Update, context: ContextTypes.DEFAULT_T
         
         # Since execute_auto_snipe sends the final message, we just return here.
         return
+
+# --- AI CHAT COMMANDS ---
+
+async def ai_crypto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Starts the AI Crypto Advisor chat."""
+    if not gemini_client:
+        await update.message.reply_text("❌ <b>خطأ:</b> ميزة الذكاء الاصطناعي غير مفعلة (GEMINI_API_KEY مفقود).", parse_mode='HTML')
+        return ConversationHandler.END
+        
+    await update.message.reply_text(
+        "🤖 <b>مستشار Sniper Crypto جاهز!</b>\n\n"
+        "يمكنك الآن طرح أسئلتك حول العملات الرقمية. سأبحث في الإنترنت وأقدم لك تحليلاً موضوعياً.\n"
+        "<b>للخروج:</b> /exit_ai",
+        parse_mode='HTML'
+    )
+    return CHATTING_WITH_AI
+
+async def exit_ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Exits the AI Crypto Advisor chat."""
+    await update.message.reply_text(
+        "👋 <b>تم الخروج من وضع المستشار.</b>\n\n"
+        "يمكنك العودة في أي وقت باستخدام الأمر /ai_crypto.",
+        parse_mode='HTML'
+    )
+    return ConversationHandler.END
 
 async def sniper_early_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Starts the Early API Sniper background task."""
@@ -2442,6 +2678,20 @@ def main() -> None:
     application.add_handler(grid_conv_handler)
     application.add_handler(trade_conv_handler)
     application.add_handler(subscription_conv_handler)
+    
+    # --- AI Crypto Advisor Conversation Handler ---
+    ai_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("ai_crypto", ai_crypto_command)],
+        states={
+            CHATTING_WITH_AI: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_message),
+                MessageHandler(filters.VOICE, handle_ai_message),
+                CommandHandler("exit_ai", exit_ai_command),
+            ],
+        },
+        fallbacks=[CommandHandler("exit_ai", exit_ai_command)],
+    )
+    application.add_handler(ai_conv_handler)
     # application.add_handler(api_key_conv_handler) # This line is a duplicate and uses the wrong name. The correct handler is api_setup_handler, which is already added on line 1522.
     
     # Language Selection Handlers
