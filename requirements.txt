@@ -8,4 +8,4 @@ requests
 beautifulsoup4
 google-generativeai
 pydub
-google-search-results
+google-api-python-client
