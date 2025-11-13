@@ -1,71 +1,176 @@
-import requests
-import json
-import time
+# -*- coding: utf-8 -*-
+import aiosqlite
+import os
+import datetime
 
-# اسم الملف الذي يحتوي على التوكنات التي تم جمعها (كل توكن في سطر جديد)
-INPUT_FILE = "raw_tokens.txt"
-# اسم الملف الذي سيتم حفظ التوكنات الصالحة فيه
-OUTPUT_FILE = "valid_tokens.txt"
-# حجم الدفعة للتقرير
-BATCH_SIZE = 100
+DATABASE_NAME = "database.db"
 
-def check_token_validity(token):
-    """
-    يتحقق من صلاحية توكن بوت تليجرام باستخدام طريقة getMe.
-    """
-    url = f"https://api.telegram.org/bot{token}/getMe"
-    try:
-        # لا نحتاج إلى تأخير هنا، التأخير سيكون على مستوى الدفعات
-        response = requests.get(url, timeout=5)
-        # إذا كان الرد 200 OK والـ 'ok' في الـ JSON هي True، فالتوكن صالح
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('ok') is True:
-                return True
+async def init_db():
+    """Initializes the database and creates the users table if it doesn't exist."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                user_type TEXT DEFAULT 'client',
+                exchange_id TEXT NULL,
+                api_key TEXT NULL,
+                api_secret TEXT NULL,
+                password TEXT NULL, -- CRITICAL FIX: Added for Bitget Trading Password
+                subscription_status TEXT DEFAULT 'inactive',
+                subscription_end_date DATETIME NULL,
+                language TEXT DEFAULT 'ar'
+            )
+        """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS grids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                symbol TEXT NOT NULL,
+                lower_bound REAL NOT NULL,
+                upper_bound REAL NOT NULL,
+                num_grids INTEGER NOT NULL,
+                amount_per_order REAL NOT NULL,
+                status TEXT DEFAULT 'active',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.commit()
+
+async def get_user(user_id):
+    """Fetches a user's record from the database."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        user = await cursor.fetchone()
+        # Convert Row object to dict to ensure compatibility with bot.py access methods
+        return dict(user) if user else None
+
+async def add_new_user(user_id, user_type='client'):
+    """Adds a new user to the database."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO users (user_id, user_type, language) VALUES (?, ?, 'ar')",
+            (user_id, user_type)
+        )
+        await db.commit()
+
+async def update_subscription_status(user_id, status, end_date=None):
+    """Updates a user's subscription status and end date."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE users SET subscription_status = ?, subscription_end_date = ? WHERE user_id = ?",
+            (status, end_date, user_id)
+        )
+        await db.commit()
+
+async def update_api_keys(user_id, exchange_id, api_key, api_secret, password=None):
+    """Updates a user's API keys and exchange ID."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE users SET exchange_id = ?, api_key = ?, api_secret = ?, password = ? WHERE user_id = ?",
+            (exchange_id, api_key, api_secret, password, user_id)
+        )
+        await db.commit()
+
+async def setup_vip_api_keys(user_id, api_key, api_secret):
+    """Sets up API keys for a VIP user, only if they are not already set."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        # Ensure user exists and has a default language
+        await db.execute(
+            "INSERT OR IGNORE INTO users (user_id, api_key, api_secret, language) VALUES (?, ?, ?, 'ar')",
+            (user_id, api_key, api_secret)
+        )
+        await db.execute(
+            "UPDATE users SET api_key = ?, api_secret = ? WHERE user_id = ? AND api_key IS NULL",
+            (api_key, api_secret, user_id)
+        )
+        await db.commit()
+
+async def update_user_language(user_id, language):
+    """Updates a user's preferred language."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE users SET language = ? WHERE user_id = ?",
+            (language, user_id)
+        )
+        await db.commit()
+
+
+def is_subscription_active(user_record):
+    """Checks if the user's subscription is currently active."""
+    if not user_record:
         return False
-    except requests.exceptions.RequestException:
-        # التعامل مع أخطاء الاتصال أو انتهاء المهلة
-        return False
-
-def validate_tokens():
-    """
-    يقرأ التوكنات من ملف الإدخال ويتحقق من صلاحيتها ويحفظ الصالح منها.
-    """
-    valid_count = 0
-    total_count = 0
     
-    try:
-        with open(INPUT_FILE, 'r') as f:
-            tokens = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        print(f"خطأ: لم يتم العثور على ملف الإدخال {INPUT_FILE}. يرجى التأكد من وجوده.")
-        return
-
-    total_count = len(tokens)
-    print(f"تم العثور على {total_count} توكن محتمل في الملف.")
+    if user_record.get('subscription_status') == 'active':
+        end_date_str = user_record.get('subscription_end_date')
+        if end_date_str:
+            # Convert string to datetime object
+            end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d %H:%M:%S')
+            # Check if the end date is in the future
+            return end_date > datetime.datetime.now()
     
-    with open(OUTPUT_FILE, 'w') as out_f:
-        for i, token in enumerate(tokens):
-            
-            if check_token_validity(token):
-                out_f.write(token + '\n')
-                valid_count += 1
-                print(f"[{i+1}/{total_count}] التوكن صالح: {token[:10]}... - الصالح: {valid_count}")
-            else:
-                print(f"[{i+1}/{total_count}] التوكن غير صالح: {token[:10]}...")
+    return False
 
-            # تقرير الدفعة
-            if (i + 1) % BATCH_SIZE == 0:
-                print("-" * 50)
-                print(f"✅ تقرير الدفعة رقم {(i + 1) // BATCH_SIZE}: تم فحص {i + 1} توكن. الصالح حتى الآن: {valid_count}")
-                print("-" * 50)
-                # تأخير بين الدفعات لتجنب الحظر من تليجرام
-                time.sleep(5) 
+# Initialize the database file
+async def create_initial_db_file():
+    """A helper function to create the initial database file."""
+    if not os.path.exists(DATABASE_NAME):
+        await init_db()
 
-    print("=" * 50)
-    print(f"✅ اكتمل التحقق. إجمالي التوكنات التي تم فحصها: {total_count}")
-    print(f"✅ إجمالي التوكنات الصالحة: {valid_count}. تم حفظها في {OUTPUT_FILE}")
-    print("=" * 50)
+if __name__ == '__main__':
+    # Simple test to create the file
+    import asyncio
+    asyncio.run(create_initial_db_file())
+    print(f"Database file '{DATABASE_NAME}' created successfully.")
 
-if __name__ == "__main__":
-    validate_tokens()
+
+async def add_new_grid(user_id, symbol, lower_bound, upper_bound, num_grids, amount_per_order):
+    """Adds a new grid trading configuration to the database."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        cursor = await db.execute(
+            "INSERT INTO grids (user_id, symbol, lower_bound, upper_bound, num_grids, amount_per_order) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, symbol, lower_bound, upper_bound, num_grids, amount_per_order)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+async def get_active_grids():
+    """Fetches all active grid trading configurations."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM grids WHERE status = 'active'")
+        grids = await cursor.fetchall()
+        return [dict(grid) for grid in grids]
+
+async def stop_grid(grid_id):
+    """Sets the status of a grid to 'stopped'."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        await db.execute(
+            "UPDATE grids SET status = 'stopped' WHERE id = ?",
+            (grid_id,)
+        )
+        await db.commit()
+
+async def get_user_grids(user_id):
+    """Fetches all grids (active and stopped) for a specific user."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM grids WHERE user_id = ?", (user_id,))
+        grids = await cursor.fetchall()
+        return [dict(grid) for grid in grids]
+
+async def get_grid_by_id(grid_id):
+    """Fetches a specific grid trading configuration by its ID."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM grids WHERE id = ?", (grid_id,))
+        grid = await cursor.fetchone()
+        return dict(grid) if grid else None
+
+async def get_user_by_api_key(api_key):
+    """Fetches a user's record by their API key."""
+    async with aiosqlite.connect(DATABASE_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM users WHERE api_key = ?", (api_key,))
+        user = await cursor.fetchone()
+        return dict(user) if user else None
