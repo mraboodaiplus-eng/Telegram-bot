@@ -30,7 +30,7 @@ def start(update, context):
 def run_telegram_bot():
     """Starts the Telegram bot."""
     try:
-        updater = Updater(TELEGRAM_TOKEN, use_context=True)
+        updater = Updater(TELEGRAM_TOKEN)
         dp = updater.dispatcher
 
         # إضافة معالج الأوامر
