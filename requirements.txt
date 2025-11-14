@@ -1,4 +1,3 @@
-python-telegram-bot
-ccxt
-
-Flask
+python-telegram-bot==20.7
+ccxt==4.1.75
+numpy
