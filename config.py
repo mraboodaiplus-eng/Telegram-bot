@@ -7,7 +7,7 @@ REQUIRED_ENV_VARS = [
     'MEXC_API_SECRET',
     'TELEGRAM_BOT_TOKEN',
     'TELEGRAM_CHAT_ID',
-    'WHITELIST_SYMBOLS' # تمت إضافته لتمكين تحديد العملات من البيئة
+    'WHITELIST_SYMBOLS'  # تمت إضافته لتمكين تحديد العملات من البيئة
 ]
 
 # التحقق الصارم من وجود جميع المتغيرات البيئية
@@ -26,14 +26,16 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 # معالجة قائمة العملات البيضاء
 # يجب أن تكون قائمة مفصولة بفواصل، وسيتم تحويلها إلى قائمة Python
 WHITELIST_SYMBOLS_STR = os.getenv('WHITELIST_SYMBOLS')
-WHITELIST_SYMBOLS = [s.strip().upper() for s in WHITELIST_SYMBOLS_STR.split(',') if s.strip()]
+WHITELIST_SYMBOLS = [
+    s.strip().upper() for s in WHITELIST_SYMBOLS_STR.split(',') if s.strip()
+]
 
 # ثوابت الاستراتيجية (مبدأ ما بعد الكفاءة)
 # عتبة الشراء: 5% ارتفاع في 20 ثانية
 BUY_THRESHOLD = 0.05
 TIME_WINDOW_SECONDS = 20
 
-# عتبة البيع: 3% تراجع عن سعر الذروة
+# # عتبة البيع: 3% تراجع عن الذروةوة
 SELL_THRESHOLD = 0.03
 
 # ثوابت الاتصال

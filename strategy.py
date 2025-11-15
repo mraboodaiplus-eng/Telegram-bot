@@ -78,11 +78,11 @@ class StrategyEngine:
             # 1. تحديث نافذة الصفقات
             state.add_deal(price, timestamp)
             
-            # 2. تنفيذ خوارزمية الشراء (القناص المتربص)
+            # تنفيذ خوارزمية الشراء (القناص المتربص)بص)
             if not state.is_in_position and len(state.deals) > 1:
                 await self._check_buy_condition(state, price)
                 
-            # 3. تنفيذ خوارزمية البيع (الظل اللاصق)
+              # تنفيذ خوارزمية البيع (الظل اللاصق))
             elif state.is_in_position:
                 await self._check_sell_condition(state, price)
                 
@@ -112,7 +112,6 @@ class StrategyEngine:
             # حساب الكمية بناءً على سعر السوق الحالي وقيمة USDT المحددة
             usdt_amount = BOT_STATUS["usdt_amount"]
             quantity = usdt_amount / current_price  # السرعة هي كل شيء: حساب فوري
-            # تنفيذ الأمر
             result = await self.mexc_handler.execute_order(state.symbol, "BUY", quantity)
             
             if result and result.get('orderId'):
