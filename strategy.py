@@ -6,7 +6,7 @@ from config import (
     WHITELIST_SYMBOLS, BUY_THRESHOLD, SELL_THRESHOLD, TIME_WINDOW_SECONDS
 )
 from mexc_handler import MEXCHandler
-from telegram_bot import BOT_STATUS
+
 
 # تعريف هيكل بيانات الصفقة
 # (السعر, الطابع الزمني)
@@ -52,6 +52,8 @@ class StrategyEngine:
     تطبيق مبدأ الدقة المطلقة والسرعة القصوى.
     """
     def __init__(self, mexc_handler: MEXCHandler, telegram_queue: asyncio.Queue):
+        from telegram_bot import BOT_STATUS as BOT_STATUS_GLOBAL
+        self.BOT_STATUS = BOT_STATUS_GLOBAL
         self.mexc_handler = mexc_handler
         self.telegram_queue = telegram_queue
         # حالة كل رمز في القائمة البيضاء
@@ -110,7 +112,7 @@ class StrategyEngine:
             # نفترض كمية ثابتة للشراء (يجب أن يتم تحديدها في config أو من خلال واجهة المستخدم)
             # لغرض التنفيذ، سنفترض كمية رمزية (يجب أن يتم تعديلها لاحقًا)
             # حساب الكمية بناءً على سعر السوق الحالي وقيمة USDT المحددة
-            usdt_amount = BOT_STATUS["usdt_amount"]
+            usdt_amount = self.BOT_STATUS["usdt_amount"]
             quantity = usdt_amount / current_price  # السرعة هي كل شيء: حساب فوري
             result = await self.mexc_handler.execute_order(state.symbol, "BUY", quantity)
             
@@ -150,7 +152,7 @@ class StrategyEngine:
             # نفترض كمية البيع هي نفس كمية الشراء (يجب أن يتم تعديلها لاحقًا)
             # في بيئة حقيقية، يجب استرداد الكمية المتاحة من الرصيد
             # لغرض هذا الكود، سنفترض أننا نبيع نفس الكمية التي اشتريناها (للتجربة)
-            quantity = BOT_STATUS["usdt_amount"] / state.bought_price if state.bought_price else 0.001
+            quantity = self.BOT_STATUS["usdt_amount"] / state.bought_price if state.bought_price else 0.001
             
             # تنفيذ الأمر
             result = await self.mexc_handler.execute_order(state.symbol, "SELL", quantity)
