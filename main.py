@@ -194,6 +194,10 @@ async def startup_event():
     # تهيئة Telegram Application
     telegram_application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     
+    # تهيئة وبدء التطبيق بشكل صريح لـ Webhook
+    await telegram_application.initialize()
+    await telegram_application.start()
+    
     # تهيئة البوت الرئيسي
     omega_predator = OmegaPredator(telegram_application)
     
@@ -211,6 +215,10 @@ async def shutdown_event():
     """
     if omega_predator:
         await omega_predator.stop()
+    
+    # إيقاف Telegram Application
+    if telegram_application:
+        await telegram_application.stop()
 
 @app.post(f"/{config.TELEGRAM_BOT_TOKEN}")
 async def telegram_webhook(request: Request):
