@@ -169,15 +169,15 @@ class OmegaPredator:
         # بدء الاستماع لأوامر Telegram
         telegram_task = asyncio.create_task(self.telegram_handler.listen_for_commands())
         
-        # طلب مبلغ الصفقة
-        amount = await self.telegram_handler.request_trade_amount()
+        # إرسال رسالة الترحيب عند البدء
+        await self.telegram_handler.send_welcome_message()
         
-        if amount <= 0:
-            print("❌ لم يتم تحديد مبلغ صحيح. إنهاء البرنامج.")
-            self.running = False
-            return
-        
-        print(f"✅ تم تحديد مبلغ الصفقة: ${amount}")
+        # إذا كان مبلغ الصفقة محددًا مسبقًا (من متغير بيئي أو إعدادات سابقة)، نبدأ المراقبة
+        if config.TRADE_AMOUNT_USD > 0:
+            await self.on_amount_set(config.TRADE_AMOUNT_USD)
+            print(f"✅ تم تحديد مبلغ الصفقة مسبقًا: ${config.TRADE_AMOUNT_USD}. بدء المراقبة.")
+        else:
+            print("⚠️ لم يتم تحديد مبلغ الصفقة. البوت في وضع الاستعداد.")
         
         # انتظار حتى يتم إيقاف البوت
         try:

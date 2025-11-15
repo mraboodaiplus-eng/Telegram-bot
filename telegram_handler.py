@@ -62,6 +62,27 @@ class TelegramHandler:
             print(f"❌ فشل إرسال رسالة Telegram: {e}")
             return False
     
+    async def send_welcome_message(self):
+        """
+        إرسال رسالة ترحيب فخمة مع قائمة الأوامر
+        """
+        message = (
+            "👑 <b>مرحباً بك سيدي مارك في منظومة Omega Predator</b> 👑\n\n"
+            "أنا CodeMaestro، سلاحك الرقمي عالي السرعة في سوق MEXC.\n"
+            "لقد تم تفعيل البوت بنجاح، وهو الآن في وضع الاستعداد لتلقي الأوامر.\n\n"
+            "⚙️ <b>قائمة الأوامر السيادية:</b>\n"
+            "• <code>/start</code> - <i>إعادة تشغيل البوت وطلب تحديد مبلغ الصفقة.</i>\n"
+            "• <code>/amount [مبلغ]</code> - <i>تحديد مبلغ الشراء بالدولار لكل صفقة.</i>\n"
+            "• <code>/status</code> - <i>الحصول على حالة البوت الحالية والصفقات المفتوحة.</i>\n"
+            "• <code>/stop</code> - <i>إيقاف البوت بشكل آمن (غير مبرمج حاليًا).</i>\n\n"
+            "<b>العملات المراقبة:</b> <code>" + ", ".join(config.WHITELIST) + "</code>\n"
+            "<b>عتبة الشراء:</b> <code>" + str(config.BUY_THRESHOLD * 100) + "%</code>\n"
+            "<b>عتبة البيع:</b> <code>" + str(config.SELL_THRESHOLD * 100) + "%</code>\n\n"
+            "<b>يرجى إرسال الأمر <code>/amount [مبلغ]</code> لبدء التداول.</b>\n"
+            "مثال: <code>/amount 100</code>"
+        )
+        await self.send_message(message)
+
     async def request_trade_amount(self) -> float:
         """
         طلب مبلغ الصفقة من المستخدم
@@ -72,8 +93,8 @@ class TelegramHandler:
         self.waiting_for_amount = True
         
         await self.send_message(
-            "🎯 <b>Omega Predator</b> تم تفعيل\n\n"
-            "سيدي مارك، يرجى تحديد مبلغ الشراء بالدولار (USD) لكل صفقة.\n\n"
+            "💰 <b>تحديد مبلغ الصفقة</b>\n\n"
+            "يرجى تحديد مبلغ الشراء بالدولار (USD) لكل صفقة.\n"
             "مثال: <code>100</code>"
         )
         
@@ -207,10 +228,29 @@ class TelegramHandler:
                     
                     # معالجة الأوامر
                     if text.startswith('/start'):
-                        # سيتم التعامل معه في main.py
-                        pass
+                        await self.send_welcome_message()
                     
-                    # معالجة إدخال المبلغ
+                    elif text.startswith('/amount'):
+                        try:
+                            # استخراج المبلغ من الأمر
+                            parts = text.split()
+                            if len(parts) == 2:
+                                amount = float(parts[1])
+                                if amount > 0:
+                                    config.TRADE_AMOUNT_USD = amount
+                                    self.waiting_for_amount = False
+                                    await self.confirm_amount(amount)
+                                    
+                                    if self.on_amount_set:
+                                        await self.on_amount_set(amount)
+                                else:
+                                    await self.send_message("⚠️ يجب أن يكون المبلغ أكبر من صفر.")
+                            else:
+                                await self.send_message("⚠️ صيغة الأمر غير صحيحة. استخدم: <code>/amount [مبلغ]</code>")
+                        except ValueError:
+                            await self.send_message("⚠️ يرجى إدخال رقم صحيح بعد الأمر /amount")
+                    
+                    # معالجة إدخال المبلغ (في حال كان المستخدم يرسل الرقم مباشرة)
                     elif self.waiting_for_amount:
                         try:
                             amount = float(text)

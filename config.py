@@ -12,7 +12,7 @@ load_dotenv()
 
 # ===== MEXC API Configuration =====
 MEXC_API_KEY = os.getenv('MEXC_API_KEY', '')
-MEXC_SECRET_KEY = os.getenv('MEXC_SECRET_KEY', '')
+MEXC_SECRET_KEY = os.getenv('MEXC_API_SECRET', '')
 MEXC_BASE_URL = 'https://api.mexc.com'
 MEXC_WS_URL = 'wss://wbs.mexc.com/ws'
 
@@ -31,7 +31,8 @@ SELL_THRESHOLD = 0.03  # 3%
 TIME_WINDOW = 20  # 20 seconds
 
 # القائمة البيضاء للعملات (سيتم تحديثها من قبل المستخدم)
-WHITELIST: List[str] = ['BTCUSDT', 'ETHUSDT']
+WHITELIST_STR = os.getenv('WHITELIST_SYMBOLS', 'BTCUSDT,ETHUSDT')
+WHITELIST: List[str] = [s.strip() for s in WHITELIST_STR.split(',') if s.strip()]
 
 # مبلغ الصفقة (سيتم تحديده من قبل المستخدم عند البدء)
 TRADE_AMOUNT_USD = 0.0
