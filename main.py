@@ -69,23 +69,8 @@ async def main():
 
 
 
-def handle_exit(signum, frame):
-    """معالجة إشارات الخروج (SIGINT, SIGTERM) لإيقاف التشغيل بأمان."""
-    print(f"Received signal {signum}. Initiating graceful shutdown...")
-    # يجب أن يتم إيقاف حلقة asyncio بشكل آمن
-    loop = asyncio.get_event_loop()
-    for task in asyncio.all_tasks(loop):
-        task.cancel()
-    # إيقاف الحلقة بعد إلغاء المهام
-    loop.stop()
-    sys.exit(0)
-
-
-
 if __name__ == "__main__":
     # تطبيق معالجة الاستثناءات القوية (مبدأ الموثوقية الصارمة)
-    signal.signal(signal.SIGINT, handle_exit)
-    signal.signal(signal.SIGTERM, handle_exit)
     
     try:
         asyncio.run(main())
