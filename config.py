@@ -1,50 +1,61 @@
+"""
+Omega Predator - Configuration Module
+تكوين المشروع وتحميل المتغيرات البيئية
+"""
+
 import os
-import sys
+from typing import List
+from dotenv import load_dotenv
 
-# قائمة المتغيرات البيئية المطلوبة
-REQUIRED_ENV_VARS = [
-    'MEXC_API_KEY',
-    'MEXC_API_SECRET',
-    'TELEGRAM_BOT_TOKEN',
-    'TELEGRAM_CHAT_ID',
-    'WHITELIST_SYMBOLS'  # تمت إضافته لتمكين تحديد العملات من البيئة
-]
+# تحميل متغيرات البيئة من ملف .env
+load_dotenv()
 
-# التحقق الصارم من وجود جميع المتغيرات البيئية
-for var in REQUIRED_ENV_VARS:
-    if not os.getenv(var):
-        print(f"FATAL ERROR: Missing required environment variable: {var}")
-        print("Protocol 'Zero-Doubt' Violation: Program terminated.")
-        sys.exit(1)
+# ===== MEXC API Configuration =====
+MEXC_API_KEY = os.getenv('MEXC_API_KEY', '')
+MEXC_SECRET_KEY = os.getenv('MEXC_SECRET_KEY', '')
+MEXC_BASE_URL = 'https://api.mexc.com'
+MEXC_WS_URL = 'wss://wbs.mexc.com/ws'
 
-# استخراج المتغيرات
-MEXC_API_KEY = os.getenv('MEXC_API_KEY')
-MEXC_API_SECRET = os.getenv('MEXC_API_SECRET')
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+# ===== Telegram Configuration =====
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 
-# معالجة قائمة العملات البيضاء
-# يجب أن تكون قائمة مفصولة بفواصل، وسيتم تحويلها إلى قائمة Python
-WHITELIST_SYMBOLS_STR = os.getenv('WHITELIST_SYMBOLS')
-WHITELIST_SYMBOLS = [
-    s.strip().upper() for s in WHITELIST_SYMBOLS_STR.split(',') if s.strip()
-]
+# ===== Trading Parameters =====
+# عتبة الشراء: ارتفاع 5% خلال 20 ثانية
+BUY_THRESHOLD = 0.05  # 5%
 
-# ثوابت الاستراتيجية (مبدأ ما بعد الكفاءة)
-# عتبة الشراء: 5% ارتفاع في 20 ثانية
-BUY_THRESHOLD = 0.05
-TIME_WINDOW_SECONDS = 20
+# عتبة البيع: تراجع 3% من الذروة
+SELL_THRESHOLD = 0.03  # 3%
 
-# # عتبة البيع: 3% تراجع عن الذروةوة
-SELL_THRESHOLD = 0.03
+# النافذة الزمنية للمراقبة (بالثواني)
+TIME_WINDOW = 20  # 20 seconds
 
-# ثوابت الاتصال
-MEXC_WS_URL = "wss://wbs.mexc.com/ws"
-MEXC_REST_URL = "https://api.mexc.com"
+# القائمة البيضاء للعملات (سيتم تحديثها من قبل المستخدم)
+WHITELIST: List[str] = ['BTCUSDT', 'ETHUSDT']
 
-# ثوابت إعادة الاتصال
-RECONNECT_DELAY = 5 # ثواني
+# مبلغ الصفقة (سيتم تحديده من قبل المستخدم عند البدء)
+TRADE_AMOUNT_USD = 0.0
 
-# إعدادات الكود النظيف (PEP 8)
-# لا توجد متغيرات عالمية غير ضرورية، كل شيء يتم تحميله مرة واحدة
-# والتحقق منه بشكل صارم.
+# ===== System Configuration =====
+# مستوى التسجيل
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+
+# إعادة الاتصال التلقائي
+AUTO_RECONNECT = True
+RECONNECT_DELAY = 5  # seconds
+
+# ===== Validation =====
+def validate_config() -> bool:
+    """
+    التحقق من صحة الإعدادات الأساسية
+    Returns: True إذا كانت جميع الإعدادات صحيحة
+    """
+    if not MEXC_API_KEY or not MEXC_SECRET_KEY:
+        print("⚠️ تحذير: مفاتيح MEXC API غير محددة")
+        return False
+    
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ تحذير: إعدادات Telegram غير محددة")
+        return False
+    
+    return True
