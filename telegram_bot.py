@@ -79,6 +79,14 @@ class TelegramBot:
         # يجب أن يتم استرداد هذا التقرير من StrategyEngine
         await update.message.reply_text("تقرير الأداء اليومي: (قيد التنفيذ - سيتم تفعيله عند دمج StrategyEngine)")
 
+    async def report_weekly_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """تقرير الأداء الأسبوعي."""
+        if not self._is_authorized(update):
+            return
+        
+        # يجب أن يتم استرداد هذا التقرير من StrategyEngine
+        await update.message.reply_text("تقرير الأداء الأسبوعي: (قيد التنفيذ - سيتم تفعيله عند دمج StrategyEngine)")
+
     async def set_usdt_amount_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """تحديد حجم الصفقة بالدولار الأمريكي (USDT)."""
         if not self._is_authorized(update):
@@ -104,9 +112,6 @@ class TelegramBot:
             )
         except ValueError:
             await update.message.reply_text("خطأ: يرجى إدخال رقم صحيح للمبلغ.")
-        
-        # يجب أن يتم استرداد هذا التقرير من StrategyEngine
-        await update.message.reply_text("تقرير الأداء الأسبوعي: (قيد التنفيذ - سيتم تفعيله عند دمج StrategyEngine)")
 
     async def send_message_task(self):
         """مهمة غير متزامنة لإرسال الرسائل من قائمة الانتظار."""
