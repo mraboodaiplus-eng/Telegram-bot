@@ -50,8 +50,7 @@ async def main():
         asyncio.create_task(telegram_bot.send_message_task(), name="Telegram_Sender")
     ]
     
-    # إضافة مهمة وهمية للحفاظ على الحلقة الرئيسية قيد التشغيل
-    tasks.append(asyncio.create_task(asyncio.Future(), name="Keep_Alive"))
+
     
     print(f"Omega Predator: Starting with {len(WHITELIST_SYMBOLS)} symbols: {', '.join(WHITELIST_SYMBOLS)}")
     
