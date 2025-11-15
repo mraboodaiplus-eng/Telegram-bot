@@ -4,5 +4,4 @@
 aiohttp==3.9.5
 # python-telegram-bot لواجهة التحكم الآمنة
 python-telegram-bot==21.1.1
-# pydantic للتحقق من صحة البيانات (اختياري لكن مفيد للدقة)
-pydantic==2.7.4
+
