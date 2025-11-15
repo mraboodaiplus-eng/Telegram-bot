@@ -1,10 +1,10 @@
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WHITELIST_SYMBOLS
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WHITELIST_SYMBOLS, USDT_AMOUNT_PER_TRADE
 
 # حالة البوت (يجب أن يتم تحديثها من main.py)
-BOT_STATUS = {"running": False, "start_time": None}
+BOT_STATUS = {"running": False, "start_time": None, "usdt_amount": USDT_AMOUNT_PER_TRADE}
 
 class TelegramBot:
     """
@@ -21,6 +21,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("status", self.status_command))
         self.application.add_handler(CommandHandler("report_daily", self.report_daily_command))
         self.application.add_handler(CommandHandler("report_weekly", self.report_weekly_command))
+        self.application.add_handler(CommandHandler("set_usdt_amount", self.set_usdt_amount_command))
 
     def _is_authorized(self, update: Update) -> bool:
         """التحقق من أن الأمر يأتي من TELEGRAM_CHAT_ID المحدد."""
@@ -65,7 +66,8 @@ class TelegramBot:
             f"**Omega Predator Status**\n"
             f"Status: {status_text}\n"
             f"MEXC Symbols: {', '.join(WHITELIST_SYMBOLS)}\n"
-            f"Strategy: 5% Rise (20s) -> BUY | 3% Drawdown -> SELL"
+            f"Strategy: 5% Rise (20s) -> BUY | 3% Drawdown -> SELL\n"
+            f"USDT Amount per Trade: ${BOT_STATUS['usdt_amount']:.2f}"
         )
         await update.message.reply_text(message, parse_mode='Markdown')
 
@@ -77,10 +79,31 @@ class TelegramBot:
         # يجب أن يتم استرداد هذا التقرير من StrategyEngine
         await update.message.reply_text("تقرير الأداء اليومي: (قيد التنفيذ - سيتم تفعيله عند دمج StrategyEngine)")
 
-    async def report_weekly_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """تقرير الأداء الأسبوعي."""
+    async def set_usdt_amount_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """تحديد حجم الصفقة بالدولار الأمريكي (USDT)."""
         if not self._is_authorized(update):
             return
+
+        try:
+            if not context.args or len(context.args) != 1:
+                await update.message.reply_text(
+                    "الاستخدام: /set_usdt_amount <المبلغ_بالدولار>\n"
+                    "مثال: /set_usdt_amount 10"
+                )
+                return
+
+            new_amount = float(context.args[0])
+            if new_amount <= 0:
+                await update.message.reply_text("يجب أن يكون المبلغ أكبر من الصفر.")
+                return
+
+            BOT_STATUS["usdt_amount"] = new_amount
+            await update.message.reply_text(
+                f"تم تحديث حجم الصفقة بنجاح.\n"
+                f"حجم الصفقة الحالي: ${new_amount:.2f}"
+            )
+        except ValueError:
+            await update.message.reply_text("خطأ: يرجى إدخال رقم صحيح للمبلغ.")
         
         # يجب أن يتم استرداد هذا التقرير من StrategyEngine
         await update.message.reply_text("تقرير الأداء الأسبوعي: (قيد التنفيذ - سيتم تفعيله عند دمج StrategyEngine)")
