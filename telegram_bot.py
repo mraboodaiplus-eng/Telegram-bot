@@ -1,0 +1,104 @@
+import asyncio
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WHITELIST_SYMBOLS
+
+# حالة البوت (يجب أن يتم تحديثها من main.py)
+BOT_STATUS = {"running": False, "start_time": None}
+
+class TelegramBot:
+    """
+    واجهة تحكم آمنة ومباشرة للسيد مارك عبر Telegram.
+    تطبيق مبدأ الشك الصفري: تجاهل أي أوامر من مستخدمين غير مصرح لهم.
+    """
+    def __init__(self, telegram_queue: asyncio.Queue):
+        self.application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        self.telegram_queue = telegram_queue
+        
+        # إضافة المعالجات للأوامر الإلزامية
+        self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("stop", self.stop_command))
+        self.application.add_handler(CommandHandler("status", self.status_command))
+        self.application.add_handler(CommandHandler("report_daily", self.report_daily_command))
+        self.application.add_handler(CommandHandler("report_weekly", self.report_weekly_command))
+
+    def _is_authorized(self, update: Update) -> bool:
+        """التحقق من أن الأمر يأتي من TELEGRAM_CHAT_ID المحدد."""
+        # يجب أن يكون TELEGRAM_CHAT_ID سلسلة نصية تمثل ID
+        return str(update.effective_chat.id) == TELEGRAM_CHAT_ID
+
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """بدء تشغيل البوت."""
+        if not self._is_authorized(update):
+            return
+        
+        if BOT_STATUS["running"]:
+            await update.message.reply_text("Omega Predator يعمل بالفعل.")
+        else:
+            # في بيئة الإنتاج، يجب أن يتم إرسال إشارة إلى main.py لبدء التشغيل
+            # لغرض هذا الكود، سنفترض أن main.py هو من يتحكم في حالة التشغيل
+            BOT_STATUS["running"] = True
+            await update.message.reply_text("Omega Predator: تم تفعيل وضع التشغيل (Running).")
+
+    async def stop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """إيقاف تشغيل البوت."""
+        if not self._is_authorized(update):
+            return
+        
+        if not BOT_STATUS["running"]:
+            await update.message.reply_text("Omega Predator متوقف بالفعل.")
+        else:
+            # في بيئة الإنتاج، يجب أن يتم إرسال إشارة إلى main.py لإيقاف التشغيل
+            BOT_STATUS["running"] = False
+            await update.message.reply_text("Omega Predator: تم تفعيل وضع الإيقاف (Stopped).")
+
+    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """عرض حالة البوت."""
+        if not self._is_authorized(update):
+            return
+        
+        status_text = "✅ Running" if BOT_STATUS["running"] else "❌ Stopped"
+        
+        # يجب أن يتم استرداد هذه المعلومات من StrategyEngine في بيئة الإنتاج
+        # لغرض هذا الكود، سنكتفي بعرض الحالة الأساسية
+        message = (
+            f"**Omega Predator Status**\n"
+            f"Status: {status_text}\n"
+            f"MEXC Symbols: {', '.join(WHITELIST_SYMBOLS)}\n"
+            f"Strategy: 5% Rise (20s) -> BUY | 3% Drawdown -> SELL"
+        )
+        await update.message.reply_text(message, parse_mode='Markdown')
+
+    async def report_daily_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """تقرير الأداء اليومي."""
+        if not self._is_authorized(update):
+            return
+        
+        # يجب أن يتم استرداد هذا التقرير من StrategyEngine
+        await update.message.reply_text("تقرير الأداء اليومي: (قيد التنفيذ - سيتم تفعيله عند دمج StrategyEngine)")
+
+    async def report_weekly_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """تقرير الأداء الأسبوعي."""
+        if not self._is_authorized(update):
+            return
+        
+        # يجب أن يتم استرداد هذا التقرير من StrategyEngine
+        await update.message.reply_text("تقرير الأداء الأسبوعي: (قيد التنفيذ - سيتم تفعيله عند دمج StrategyEngine)")
+
+    async def send_message_task(self):
+        """مهمة غير متزامنة لإرسال الرسائل من قائمة الانتظار."""
+        while True:
+            message = await self.telegram_queue.get()
+            try:
+                await self.application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode='Markdown')
+            except Exception as e:
+                print(f"Error sending Telegram message: {e}")
+            finally:
+                self.telegram_queue.task_done()
+
+    async def run(self):
+        """تشغيل البوت بشكل غير متزامن."""
+        # تشغيل البوت في وضع الاستقصاء (Polling)
+        await self.application.run_polling(poll_interval=1)
+
+# ملاحظة: سيتم تشغيل run_polling و send_message_task في main.py بشكل متزامن.

@@ -1,3 +1,8 @@
+# التبعيات المطلوبة لتشغيل بوت Omega Predator
+# مبدأ ما بعد الكفاءة: استخدام الحد الأدنى من المكتبات
+# aiohttp للاتصال غير المتزامن (WebSocket و REST)
+aiohttp==3.9.5
+# python-telegram-bot لواجهة التحكم الآمنة
 python-telegram-bot==21.1.1
-ccxt==4.1.75
-numpy
+# pydantic للتحقق من صحة البيانات (اختياري لكن مفيد للدقة)
+pydantic==2.7.4

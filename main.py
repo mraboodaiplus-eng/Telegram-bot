@@ -1,44 +1,96 @@
-import os
-import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+import asyncio
+import sys
+import signal
+from datetime import datetime
+
+# استيراد المكونات
+from config import WHITELIST_SYMBOLS
+from mexc_handler import MEXCHandler
+from strategy import StrategyEngine
+from telegram_bot import TelegramBot, BOT_STATUS
+
+
+
+async def main():
+    """
+    المنسق الرئيسي لتشغيل جميع مكونات بوت Omega Predator بشكل متزامن.
+    تطبيق مبدأ السرعة المطلقة باستخدام asyncio.
+    """
+    print("Omega Predator: Initializing...")
     
-# إعداد تسجيل الأحداث الأساسي
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+    # 1. تهيئة قائمة انتظار Telegram
+    telegram_queue = asyncio.Queue()
     
-# دالة لمعالجة أمر /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ترسل رسالة ترحيب عند إرسال أمر /start."""
-    user = update.effective_user
-    welcome_message = (
-        f" مرحباً {user.mention_html()}!\n\n"
-        "أنا بوت Alpha Predator، في مرحلة الإعداد الأولي.\n"
-        "الاتصال ناجح!"
+    # 2. تهيئة معالج MEXC
+    # يتم تمرير قائمة انتظار الصفقات إلى MEXCHandler
+    mexc_handler = MEXCHandler(strategy_queue=asyncio.Queue())
+    
+    # 3. تهيئة محرك الاستراتيجية
+    # يتم تمرير قائمة انتظار الصفقات من MEXCHandler وقائمة انتظار Telegram إلى StrategyEngine
+    strategy_engine = StrategyEngine(
+        mexc_handler=mexc_handler,
+        telegram_queue=telegram_queue
     )
-    await update.message.reply_html(welcome_message)
-    logger.info(f"المستخدم {user.id} بدأ استخدام البوت.")
     
-def main() -> None:
-    """تبدأ تشغيل البوت."""
-    # الحصول على توكن البوت من متغيرات البيئة
-    TOKEN = os.environ.get("TELEGRAM_TOKEN")
-    if not TOKEN:
-        logger.error("خطأ: متغير البيئة TELEGRAM_TOKEN غير موجود!")
-        return
+    # يجب تمرير قائمة انتظار الصفقات من mexc_handler إلى strategy_engine
+    mexc_handler.strategy_queue = strategy_engine.deal_queue
     
-    # إنشاء التطبيق وتمرير توكن البوت إليه
-    application = Application.builder().token(TOKEN).build()
+    # 4. تهيئة بوت Telegram
+    telegram_bot = TelegramBot(telegram_queue=telegram_queue)
     
-# تسجيل معالج أمر /start
-    application.add_handler(CommandHandler("start", start))
+    # تحديث حالة البوت
+    BOT_STATUS["running"] = True
+    BOT_STATUS["start_time"] = datetime.now()
     
-# بدء تشغيل البوت
-    logger.info("...جاري بدء تشغيل البوت")
-    application.run_polling()
+    # 5. تجميع المهام المتزامنة
+    tasks = [
+        asyncio.create_task(mexc_handler.connect_and_listen(), name="MEXC_WS_Listener"),
+        asyncio.create_task(strategy_engine.process_deals(), name="Strategy_Processor"),
+        asyncio.create_task(telegram_bot.run(), name="Telegram_Bot_Polling"),
+        asyncio.create_task(telegram_bot.send_message_task(), name="Telegram_Sender")
+    ]
     
-if __name__ == '__main__':
-    main()
+    print(f"Omega Predator: Starting with {len(WHITELIST_SYMBOLS)} symbols: {', '.join(WHITELIST_SYMBOLS)}")
+    
+    # 6. تشغيل المهام
+    try:
+        await asyncio.gather(*tasks, return_exceptions=False)
+    except asyncio.CancelledError:
+        print("Omega Predator: All tasks cancelled.")
+    except Exception as e:
+        print(f"FATAL ERROR in main loop: {e}")
+    finally:
+        # 7. تنظيف الموارد
+        print("Omega Predator: Shutting down gracefully...")
+        for task in tasks:
+            task.cancel()
+        await mexc_handler.close()
+        print("Omega Predator: Shutdown complete.")
+
+
+
+def handle_exit(signum, frame):
+    """معالجة إشارات الخروج (SIGINT, SIGTERM) لإيقاف التشغيل بأمان."""
+    print(f"Received signal {signum}. Initiating graceful shutdown...")
+    # يجب أن يتم إيقاف حلقة asyncio بشكل آمن
+    loop = asyncio.get_event_loop()
+    for task in asyncio.all_tasks(loop):
+        task.cancel()
+    # إيقاف الحلقة بعد إلغاء المهام
+    loop.stop()
+    sys.exit(0)
+
+
+
+if __name__ == "__main__":
+    # تطبيق معالجة الاستثناءات القوية (مبدأ الموثوقية الصارمة)
+    signal.signal(signal.SIGINT, handle_exit)
+    signal.signal(signal.SIGTERM, handle_exit)
+    
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Program interrupted by user.")
+    except Exception as e:
+        print(f"Critical unhandled exception: {e}")
+        sys.exit(1)
