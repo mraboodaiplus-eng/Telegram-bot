@@ -52,7 +52,7 @@ async def main():
     
 
     
-    print(f"Omega Predator: Starting with {len(WHITELIST_SYMBOLS)} symbols: {', '.join(WHITELIST_SYMBOLS)}")
+    print(f"Omega Predator: Starting with {len(WHITELIST_SYMBOLS)} symbols: {', '.join(WHITELIST_SYMBOLS)}") # Final check for Git
     
     # 6. تشغيل المهام
     try:
