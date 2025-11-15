@@ -1,10 +1,10 @@
 import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WHITELIST_SYMBOLS, USDT_AMOUNT_PER_TRADE
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, WHITELIST_SYMBOLS
 
 # حالة البوت (يجب أن يتم تحديثها من main.py)
-BOT_STATUS = {"running": False, "start_time": None, "usdt_amount": USDT_AMOUNT_PER_TRADE}
+BOT_STATUS = {"running": False, "start_time": None, "usdt_amount": 10.0} # قيمة افتراضية 10 USDT
 
 class TelegramBot:
     """
