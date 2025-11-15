@@ -183,7 +183,7 @@ async def startup_event():
     # التحقق من الإعدادات
     if not config.validate_config():
         logger.error("❌ فشل التحقق من الإعدادات. إنهاء التشغيل.")
-        sys.exit(1)
+        logger.error("⚠️ سيتم تشغيل الخادم، لكن وظائف البوت الرئيسية ستكون معطلة.")
         
     logger.info(f"✅ القائمة البيضاء: {', '.join(config.WHITELIST)}")
     logger.info(f"✅ عتبة الشراء: {config.BUY_THRESHOLD * 100}%")

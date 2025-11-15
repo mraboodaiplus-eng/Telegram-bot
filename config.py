@@ -52,11 +52,11 @@ def validate_config() -> bool:
     Returns: True إذا كانت جميع الإعدادات صحيحة
     """
     if not MEXC_API_KEY or not MEXC_SECRET_KEY:
-        print("⚠️ تحذير: مفاتيح MEXC API غير محددة")
+        print("❌ خطأ: مفاتيح MEXC API غير محددة. يرجى تعيين MEXC_API_KEY و MEXC_API_SECRET.")
         return False
     
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ تحذير: إعدادات Telegram غير محددة")
+        print("❌ خطأ: إعدادات Telegram غير محددة. يرجى تعيين TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID.")
         return False
     
     return True
