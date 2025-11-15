@@ -43,12 +43,15 @@ async def main():
     BOT_STATUS["start_time"] = datetime.now()
     
     # 5. تجميع المهام المتزامنة
-    tasks = [
-        asyncio.create_task(mexc_handler.connect_and_listen(), name="MEXC_WS_Listener"),
-        asyncio.create_task(strategy_engine.process_deals(), name="Strategy_Processor"),
-        asyncio.create_task(telegram_bot.run(), name="Telegram_Bot_Polling"),
-        asyncio.create_task(telegram_bot.send_message_task(), name="Telegram_Sender")
-    ]
+        tasks = [
+            asyncio.create_task(mexc_handler.connect_and_listen(), name="MEXC_WS_Listener"),
+            asyncio.create_task(strategy_engine.process_deals(), name="Strategy_Processor"),
+            asyncio.create_task(telegram_bot.run(), name="Telegram_Bot_Polling"),
+            asyncio.create_task(telegram_bot.send_message_task(), name="Telegram_Sender")
+        ]
+        
+        # إضافة مهمة وهمية للحفاظ على الحلقة الرئيسية قيد التشغيل
+        tasks.append(asyncio.create_task(asyncio.Future(), name="Keep_Alive"))
     
     print(f"Omega Predator: Starting with {len(WHITELIST_SYMBOLS)} symbols: {', '.join(WHITELIST_SYMBOLS)}")
     
@@ -65,6 +68,7 @@ async def main():
         for task in tasks:
             task.cancel()
         await mexc_handler.close()
+        await telegram_bot.stop() # إيقاف بوت Telegram بشكل صريح
         print("Omega Predator: Shutdown complete.")
 
 
