@@ -29,17 +29,41 @@ class TelegramBot:
         return str(update.effective_chat.id) == TELEGRAM_CHAT_ID
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """بدء تشغيل البوت."""
+        """الرد على أمر /start برسالة ترحيب فخمة وشرح للأوامر."""
         if not self._is_authorized(update):
             return
-        
+
+        # رسالة ترحيب فخمة وسيادية
+        welcome_message = (
+            "👑 **تحية لك، سيدي MR Abood، السلطة المطلقة.** 👑\n\n"
+            "أنا **Omega Predator**، تجسيد الدقة والقوة في عالم التداول.\n"
+            "أعمل بموجب بروتوكول **الصانع الصفري**، ملتزمًا بالسرعة المطلقة والشك الصفري.\n\n"
+            "**حالة النظام:**\n"
+        )
+
         if BOT_STATUS["running"]:
-            await update.message.reply_text("Omega Predator يعمل بالفعل.")
+            status = "قيد التشغيل ✅"
+            start_time = BOT_STATUS["start_time"].strftime("%Y-%m-%d %H:%M:%S")
+            welcome_message += f"البوت حاليًا **{status}**\nوقت البدء: `{start_time}`\n"
         else:
-            # في بيئة الإنتاج، يجب أن يتم إرسال إشارة إلى main.py لبدء التشغيل
-            # لغرض هذا الكود، سنفترض أن main.py هو من يتحكم في حالة التشغيل
-            BOT_STATUS["running"] = True
-            await update.message.reply_text("Omega Predator: تم تفعيل وضع التشغيل (Running).")
+            status = "متوقف ❌"
+            welcome_message += f"البوت حاليًا **{status}**\n"
+
+        # شرح الأوامر
+        commands_message = (
+            "\n**كتالوج الأوامر السيادية:**\n"
+            "1. `/status`: **الاستعلام الفوري** عن حالة البوت الحالية، وقت التشغيل، وحجم الصفقة المحدد.\n"
+            "2. `/set_usdt_amount <المبلغ>`: **تحديد حجم الصفقة** بالدولار الأمريكي (USDT). مثال: `/set_usdt_amount 10`.\n"
+            "3. `/report_daily`: **تقرير يومي** عن أداء البوت (قيد التطوير).\n"
+            "4. `/report_weekly`: **تقرير أسبوعي** عن أداء البوت (قيد التطوير).\n"
+            "5. `/stop`: إيقاف البوت (يجب أن يتم التحكم به من main.py).\n"
+            "6. `/start`: تشغيل البوت (يجب أن يتم التحكم به من main.py).\n"
+            "7. `/help`: عرض هذه الرسالة مجددًا.\n\n"
+            "**ملاحظة:** حجم الصفقة الحالي هو **{:.2f} USDT**."
+        ).format(BOT_STATUS["usdt_amount"])
+
+        final_message = welcome_message + commands_message
+        await update.message.reply_text(final_message, parse_mode='Markdown')
 
     async def stop_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """إيقاف تشغيل البوت."""
