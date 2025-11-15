@@ -200,8 +200,9 @@ async def startup_event():
     # بدء WebSocket إذا كان المبلغ محددًا
     asyncio.create_task(omega_predator.start_websocket())
     
-    # إرسال رسالة الترحيب
-    await omega_predator.telegram_handler.send_welcome_message()
+    # إرسال رسالة الترحيب (نرسلها فقط إذا كانت الإعدادات صحيحة)
+    if config.validate_config():
+        await omega_predator.telegram_handler.send_welcome_message()
 
 @app.on_event("shutdown")
 async def shutdown_event():
