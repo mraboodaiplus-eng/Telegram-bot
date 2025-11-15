@@ -35,7 +35,7 @@ class TelegramHandler:
         
     async def send_message(self, text: str) -> bool:
         """
-        إرسال رسالة عبر Telegram
+        إرسال رسالة عبر Telegram، مع تقسيمها إذا كانت طويلة جداً.
         
         Args:
             text: نص الرسالة
@@ -43,16 +43,25 @@ class TelegramHandler:
         Returns:
             True إذا تم الإرسال بنجاح
         """
-        try:
-            await self.bot.send_message(
-                chat_id=self.chat_id,
-                text=text,
-                parse_mode='HTML'
-            )
-            return True
-        except Exception as e:
-            logger.error(f"❌ فشل إرسال رسالة Telegram: {e}")
-            return False
+        # الحد الأقصى لرسالة Telegram هو 4096 حرفاً، نستخدم 3500 كحد آمن
+        MAX_MESSAGE_LENGTH = 3500
+        
+        # تقسيم الرسالة إلى أجزاء
+        messages = [text[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(text), MAX_MESSAGE_LENGTH)]
+        
+        success = True
+        for msg in messages:
+            try:
+                await self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=msg,
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                logger.error(f"❌ فشل إرسال رسالة Telegram: {e}")
+                success = False
+                
+        return success
 
     async def send_welcome_message(self):
         """
