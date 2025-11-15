@@ -1,13 +1,19 @@
 """
 Omega Predator - Telegram Handler Module
-معالج Telegram للتحكم والإشعارات
+معالج Telegram للتحكم والإشعارات باستخدام Webhook
 """
 
 import asyncio
-from typing import Optional, Callable
+import logging
+from typing import Optional, Callable, Dict, Any
 import aiohttp
 import config
+from telegram import Update, Bot
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
+# إعداد التسجيل
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class TelegramHandler:
     """
@@ -15,26 +21,18 @@ class TelegramHandler:
     التحكم بالبوت وإرسال الإشعارات
     """
     
-    def __init__(self):
-        self.bot_token = config.TELEGRAM_BOT_TOKEN
+    def __init__(self, application: Application):
+        self.application = application
+        self.bot: Bot = application.bot
         self.chat_id = config.TELEGRAM_CHAT_ID
-        self.base_url = f"https://api.telegram.org/bot{self.bot_token}"
-        self.session: Optional[aiohttp.ClientSession] = None
-        self.running = False
         self.on_amount_set: Optional[Callable] = None
         self.waiting_for_amount = False
-    
-    async def init_session(self):
-        """تهيئة جلسة HTTP غير متزامنة"""
-        if not self.session:
-            self.session = aiohttp.ClientSession()
-    
-    async def close_session(self):
-        """إغلاق جلسة HTTP"""
-        if self.session:
-            await self.session.close()
-            self.session = None
-    
+        
+        # إضافة معالجات الأوامر
+        self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("amount", self.amount_command))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text_message))
+        
     async def send_message(self, text: str) -> bool:
         """
         إرسال رسالة عبر Telegram
@@ -45,23 +43,17 @@ class TelegramHandler:
         Returns:
             True إذا تم الإرسال بنجاح
         """
-        await self.init_session()
-        
         try:
-            url = f"{self.base_url}/sendMessage"
-            params = {
-                'chat_id': self.chat_id,
-                'text': text,
-                'parse_mode': 'HTML'
-            }
-            
-            async with self.session.post(url, json=params) as response:
-                return response.status == 200
-        
+            await self.bot.send_message(
+                chat_id=self.chat_id,
+                text=text,
+                parse_mode='HTML'
+            )
+            return True
         except Exception as e:
-            print(f"❌ فشل إرسال رسالة Telegram: {e}")
+            logger.error(f"❌ فشل إرسال رسالة Telegram: {e}")
             return False
-    
+
     async def send_welcome_message(self):
         """
         إرسال رسالة ترحيب فخمة مع قائمة الأوامر
@@ -71,9 +63,9 @@ class TelegramHandler:
             "أنا CodeMaestro، سلاحك الرقمي عالي السرعة في سوق MEXC.\n"
             "لقد تم تفعيل البوت بنجاح، وهو الآن في وضع الاستعداد لتلقي الأوامر.\n\n"
             "⚙️ <b>قائمة الأوامر السيادية:</b>\n"
-            "• <code>/start</code> - <i>إعادة تشغيل البوت وطلب تحديد مبلغ الصفقة.</i>\n"
+            "• <code>/start</code> - <i>إعادة عرض هذه الرسالة.</i>\n"
             "• <code>/amount [مبلغ]</code> - <i>تحديد مبلغ الشراء بالدولار لكل صفقة.</i>\n"
-            "• <code>/status</code> - <i>الحصول على حالة البوت الحالية والصفقات المفتوحة.</i>\n"
+            "• <code>/status</code> - <i>الحصول على حالة البوت الحالية والصفقات المفتوحة (غير مبرمج حاليًا).</i>\n"
             "• <code>/stop</code> - <i>إيقاف البوت بشكل آمن (غير مبرمج حاليًا).</i>\n\n"
             "<b>العملات المراقبة:</b> <code>" + ", ".join(config.WHITELIST) + "</code>\n"
             "<b>عتبة الشراء:</b> <code>" + str(config.BUY_THRESHOLD * 100) + "%</code>\n"
@@ -83,58 +75,61 @@ class TelegramHandler:
         )
         await self.send_message(message)
 
-    async def request_trade_amount(self) -> float:
-        """
-        طلب مبلغ الصفقة من المستخدم
-        
-        Returns:
-            مبلغ الصفقة بالدولار
-        """
-        self.waiting_for_amount = True
-        
-        await self.send_message(
-            "💰 <b>تحديد مبلغ الصفقة</b>\n\n"
-            "يرجى تحديد مبلغ الشراء بالدولار (USD) لكل صفقة.\n"
-            "مثال: <code>100</code>"
-        )
-        
-        # انتظار الرد
-        amount = 0.0
-        timeout = 300  # 5 دقائق
-        start_time = asyncio.get_event_loop().time()
-        
-        while self.waiting_for_amount:
-            if asyncio.get_event_loop().time() - start_time > timeout:
-                await self.send_message("⏱️ انتهت مهلة الانتظار. يرجى إعادة تشغيل البوت.")
-                return 0.0
-            
-            await asyncio.sleep(1)
-        
-        return config.TRADE_AMOUNT_USD
-    
     async def confirm_amount(self, amount: float):
         """
         تأكيد استلام مبلغ الصفقة
-        
-        Args:
-            amount: المبلغ المحدد
         """
         await self.send_message(
             f"✅ <b>مفهوم</b>\n\n"
             f"سيتم تنفيذ كل صفقة شراء بمبلغ <b>${amount:.2f}</b>\n\n"
             f"🎯 <b>Omega Predator</b> الآن في وضع الصيد."
         )
-    
-    async def notify_buy(self, symbol: str, price: float, quantity: float, amount: float):
-        """
-        إشعار بتنفيذ أمر شراء
+
+    # --- معالجات الأوامر ---
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """معالجة أمر /start"""
+        if str(update.effective_chat.id) != self.chat_id:
+            await update.message.reply_text("❌ غير مصرح لك باستخدام هذا البوت.")
+            return
+        await self.send_welcome_message()
+
+    async def amount_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """معالجة أمر /amount"""
+        if str(update.effective_chat.id) != self.chat_id:
+            await update.message.reply_text("❌ غير مصرح لك باستخدام هذا البوت.")
+            return
+            
+        try:
+            if not context.args:
+                await update.message.reply_text("⚠️ يرجى تحديد المبلغ. مثال: <code>/amount 100</code>", parse_mode='HTML')
+                return
+                
+            amount = float(context.args[0])
+            if amount > 0:
+                config.TRADE_AMOUNT_USD = amount
+                await self.confirm_amount(amount)
+                
+                if self.on_amount_set:
+                    await self.on_amount_set(amount)
+            else:
+                await update.message.reply_text("⚠️ يجب أن يكون المبلغ أكبر من صفر.")
+        except ValueError:
+            await update.message.reply_text("⚠️ يرجى إدخال رقم صحيح بعد الأمر /amount")
+        except Exception as e:
+            logger.error(f"خطأ في معالجة أمر /amount: {e}")
+            await update.message.reply_text("❌ حدث خطأ أثناء معالجة الأمر.")
+
+    async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """معالجة الرسائل النصية غير الأوامر"""
+        if str(update.effective_chat.id) != self.chat_id:
+            return
         
-        Args:
-            symbol: رمز العملة
-            price: سعر الشراء
-            quantity: الكمية
-            amount: المبلغ الإجمالي
-        """
+        # يمكن إضافة منطق إضافي هنا لمعالجة الرسائل النصية إذا لزم الأمر
+        await update.message.reply_text("⚠️ أمر غير معروف. يرجى استخدام الأوامر المتاحة.")
+
+    # --- وظائف الإشعارات (تبقى كما هي) ---
+    async def notify_buy(self, symbol: str, price: float, quantity: float, amount: float):
+        """إشعار بتنفيذ أمر شراء"""
         await self.send_message(
             f"🟢 <b>تم تنفيذ أمر شراء</b>\n\n"
             f"العملة: <code>{symbol}</code>\n"
@@ -145,17 +140,7 @@ class TelegramHandler:
     
     async def notify_sell(self, symbol: str, buy_price: float, sell_price: float, 
                          quantity: float, profit_loss: float, profit_percent: float):
-        """
-        إشعار بتنفيذ أمر بيع
-        
-        Args:
-            symbol: رمز العملة
-            buy_price: سعر الشراء
-            sell_price: سعر البيع
-            quantity: الكمية
-            profit_loss: الربح/الخسارة بالدولار
-            profit_percent: نسبة الربح/الخسارة
-        """
+        """إشعار بتنفيذ أمر بيع"""
         emoji = "🟢" if profit_loss >= 0 else "🔴"
         status = "ربح" if profit_loss >= 0 else "خسارة"
         
@@ -169,108 +154,9 @@ class TelegramHandler:
         )
     
     async def notify_error(self, error_message: str):
-        """
-        إشعار بحدوث خطأ
-        
-        Args:
-            error_message: رسالة الخطأ
-        """
+        """إشعار بحدوث خطأ"""
         await self.send_message(f"❌ <b>خطأ</b>\n\n{error_message}")
-    
-    async def get_updates(self, offset: int = 0) -> list:
-        """
-        الحصول على التحديثات من Telegram
-        
-        Args:
-            offset: معرف آخر تحديث
-            
-        Returns:
-            قائمة التحديثات
-        """
-        await self.init_session()
-        
-        try:
-            url = f"{self.base_url}/getUpdates"
-            params = {
-                'offset': offset,
-                'timeout': 30
-            }
-            
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data.get('result', [])
-        
-        except Exception as e:
-            print(f"⚠️ خطأ في الحصول على التحديثات: {e}")
-        
-        return []
-    
-    async def listen_for_commands(self):
-        """
-        الاستماع لأوامر Telegram
-        """
-        self.running = True
-        offset = 0
-        
-        while self.running:
-            try:
-                updates = await self.get_updates(offset)
-                
-                for update in updates:
-                    offset = update['update_id'] + 1
-                    
-                    if 'message' not in update:
-                        continue
-                    
-                    message = update['message']
-                    text = message.get('text', '')
-                    
-                    # معالجة الأوامر
-                    if text.startswith('/start'):
-                        await self.send_welcome_message()
-                    
-                    elif text.startswith('/amount'):
-                        try:
-                            # استخراج المبلغ من الأمر
-                            parts = text.split()
-                            if len(parts) == 2:
-                                amount = float(parts[1])
-                                if amount > 0:
-                                    config.TRADE_AMOUNT_USD = amount
-                                    self.waiting_for_amount = False
-                                    await self.confirm_amount(amount)
-                                    
-                                    if self.on_amount_set:
-                                        await self.on_amount_set(amount)
-                                else:
-                                    await self.send_message("⚠️ يجب أن يكون المبلغ أكبر من صفر.")
-                            else:
-                                await self.send_message("⚠️ صيغة الأمر غير صحيحة. استخدم: <code>/amount [مبلغ]</code>")
-                        except ValueError:
-                            await self.send_message("⚠️ يرجى إدخال رقم صحيح بعد الأمر /amount")
-                    
-                    # معالجة إدخال المبلغ (في حال كان المستخدم يرسل الرقم مباشرة)
-                    elif self.waiting_for_amount:
-                        try:
-                            amount = float(text)
-                            if amount > 0:
-                                config.TRADE_AMOUNT_USD = amount
-                                self.waiting_for_amount = False
-                                await self.confirm_amount(amount)
-                                
-                                if self.on_amount_set:
-                                    await self.on_amount_set(amount)
-                        except ValueError:
-                            await self.send_message("⚠️ يرجى إدخال رقم صحيح")
-                
-                await asyncio.sleep(1)
-            
-            except Exception as e:
-                print(f"⚠️ خطأ في الاستماع للأوامر: {e}")
-                await asyncio.sleep(5)
-    
+
+    # دالة وهمية للحفاظ على التوافق مع main.py
     async def stop(self):
-        """إيقاف الاستماع"""
-        self.running = False
-        await self.close_session()
+        pass
