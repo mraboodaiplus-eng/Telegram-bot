@@ -127,6 +127,7 @@ class TelegramBot:
     async def run(self):
         """تشغيل البوت بشكل غير متزامن."""
         # تشغيل البوت في وضع الاستقصاء (Polling)
-        await self.application.run_polling(poll_interval=1)
+        # تمرير stop_signals=[] لمنع run_polling من إغلاق حلقة asyncio الرئيسية
+        await self.application.run_polling(poll_interval=1, stop_signals=[])
 
 # ملاحظة: سيتم تشغيل run_polling و send_message_task في main.py بشكل متزامن.
