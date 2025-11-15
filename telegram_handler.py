@@ -46,9 +46,38 @@ class TelegramHandler:
         # الحد الأقصى لرسالة Telegram هو 4096 حرفاً، نستخدم 3500 كحد آمن
         MAX_MESSAGE_LENGTH = 3500
         
-        # تقسيم الرسالة إلى أجزاء
-        messages = [text[i:i + MAX_MESSAGE_LENGTH] for i in range(0, len(text), MAX_MESSAGE_LENGTH)]
+        # تقسيم الرسالة إلى أجزاء مع معالجة وسم <code>
+        messages = []
+        current_index = 0
         
+        while current_index < len(text):
+            end_index = min(current_index + MAX_MESSAGE_LENGTH, len(text))
+            chunk = text[current_index:end_index]
+            
+            # إذا كان الجزء ينتهي في منتصف وسم <code>، نبحث عن أقرب فاصل آمن (نهاية سطر)
+            if chunk.count('<code>') != chunk.count('</code>'):
+                # نبحث عن آخر نهاية سطر آمنة قبل نهاية الجزء
+                safe_end = chunk.rfind('\n')
+                
+                if safe_end != -1 and safe_end > MAX_MESSAGE_LENGTH - 500:
+                    end_index = current_index + safe_end
+                    chunk = text[current_index:end_index]
+                
+                # إذا كان الجزء لا يزال غير متوازن، نقوم بإغلاق الوسم وفتحه في الجزء التالي
+                if chunk.count('<code>') > chunk.count('</code>'):
+                    chunk += '</code>'
+                    messages.append(chunk)
+                    current_index = end_index
+                    
+                    # الجزء التالي يجب أن يبدأ بفتح الوسم
+                    if current_index < len(text):
+                        messages.append('<code>' + text[current_index:])
+                        current_index = len(text)
+                    break
+                
+            messages.append(chunk)
+            current_index = end_index
+            
         success = True
         for msg in messages:
             try:
