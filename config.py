@@ -22,7 +22,7 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID', '')
 
 # ===== Trading Parameters =====
 # عتبة الشراء: ارتفاع 5% خلال 20 ثانية
-BUY_THRESHOLD = 0.005  # 0.5% (لأغراض الاختبار)
+BUY_THRESHOLD = 0.05  # 5%
 
 # عتبة البيع: تراجع 3% من الذروة
 SELL_THRESHOLD = 0.03  # 3%
