@@ -16,15 +16,15 @@ class TradingEngine:
     يدير نوافذ الأسعار وشروط الشراء/البيع
     """
     
-    def __init__(self):
+    def __init__(self, symbols: list[str]):
         # نوافذ الأسعار لكل عملة (deque للسرعة القصوى)
         self.price_windows: Dict[str, deque] = {}
         
         # حالة التداول لكل عملة
         self.positions: Dict[str, dict] = {}
         
-        # تهيئة النوافذ للعملات في القائمة البيضاء
-        for symbol in config.WHITELIST:
+        # تهيئة النوافذ للعملات التي تم جلبها ديناميكياً
+        for symbol in symbols:
             self.price_windows[symbol] = deque(maxlen=1000)  # حد أقصى للأمان
             self.positions[symbol] = {
                 'active': False,

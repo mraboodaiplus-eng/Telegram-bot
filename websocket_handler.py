@@ -17,7 +17,7 @@ class WebSocketHandler:
     الاتصال الفوري بتدفق بيانات الصفقات
     """
     
-    def __init__(self, on_trade_callback: Callable):
+    def __init__(self, on_trade_callback: Callable, symbols: list[str]):
         """
         Args:
             on_trade_callback: دالة يتم استدعاؤها عند استقبال صفقة جديدة
@@ -25,6 +25,7 @@ class WebSocketHandler:
         """
         self.ws_url = config.MEXC_WS_URL
         self.on_trade = on_trade_callback
+        self.symbols = symbols # قائمة الرموز الديناميكية
         self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.running = False
     
@@ -36,8 +37,8 @@ class WebSocketHandler:
             self.websocket = await websockets.connect(self.ws_url)
             self.running = True
             
-            # الاشتراك في قنوات الصفقات للعملات في القائمة البيضاء
-            for symbol in config.WHITELIST:
+            # الاشتراك في قنوات الصفقات لجميع العملات التي تم جلبها
+            for symbol in self.symbols:
                 subscribe_message = {
                     "method": "SUBSCRIPTION",
                     "params": [

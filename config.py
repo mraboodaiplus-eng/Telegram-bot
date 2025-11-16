@@ -31,8 +31,8 @@ SELL_THRESHOLD = 0.03  # 3%
 TIME_WINDOW = 20  # 20 seconds
 
 # القائمة البيضاء للعملات (سيتم تحديثها من قبل المستخدم)
-WHITELIST_STR = os.getenv('WHITELIST_SYMBOLS', 'BTCUSDT,ETHUSDT')
-WHITELIST: List[str] = [s.strip() for s in WHITELIST_STR.split(',') if s.strip()]
+# تم إزالة WHITELIST_STR بناءً على أمر المدير العام
+WHITELIST: List[str] = [] # القائمة البيضاء أصبحت ديناميكية
 
 # مبلغ الصفقة (سيتم تحديده من قبل المستخدم عند البدء)
 TRADE_AMOUNT_USD = 0.0

@@ -231,3 +231,29 @@ class MEXCHandler:
             print(f"❌ خطأ في الحصول على الرصيد: {e}")
         
         return None
+
+    async def get_all_symbols(self) -> list[str]:
+        """
+        الحصول على قائمة بجميع أزواج التداول المتاحة (التي تنتهي بـ USDT)
+        
+        Returns:
+            قائمة برموز العملات (مثل ['BTCUSDT', 'ETHUSDT'])
+        """
+        await self.init_session()
+        
+        try:
+            url = f"{self.base_url}/api/v3/exchangeInfo"
+            async with self.session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    # تصفية الرموز التي تنتهي بـ USDT فقط
+                    symbols = [s['symbol'] for s in data.get('symbols', []) if s['symbol'].endswith('USDT')]
+                    return symbols
+                else:
+                    error_text = await response.text()
+                    print(f"❌ فشل في جلب قائمة الرموز: {error_text}")
+        except Exception as e:
+            print(f"❌ خطأ في get_all_symbols: {e}")
+        
+        return []
+        return []

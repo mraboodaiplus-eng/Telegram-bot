@@ -41,8 +41,9 @@ class OmegaPredator:
     تنسيق جميع الوحدات والتحكم في التداول
     """
     
-    def __init__(self, application: Application):
-        self.trading_engine = TradingEngine()
+    def __init__(self, application: Application, symbols: list[str]):
+        self.symbols = symbols
+        self.trading_engine = TradingEngine(symbols)
         self.mexc_handler = MEXCHandler()
         self.telegram_handler = TelegramHandler(application)
         self.websocket_handler: Optional[WebSocketHandler] = None
@@ -136,7 +137,7 @@ class OmegaPredator:
         """
         # بدء WebSocket
         if not self.websocket_handler:
-            self.websocket_handler = WebSocketHandler(self.on_trade_received)
+            self.websocket_handler = WebSocketHandler(self.on_trade_received, self.symbols)
             asyncio.create_task(self.websocket_handler.start())
         else:
             logger.info("WebSocket already running.")
@@ -185,7 +186,6 @@ async def startup_event():
         logger.error("❌ فشل التحقق من الإعدادات. إنهاء التشغيل.")
         logger.error("⚠️ سيتم تشغيل الخادم، لكن وظائف البوت الرئيسية ستكون معطلة.")
         
-    logger.info(f"✅ القائمة البيضاء: {', '.join(config.WHITELIST)}")
     logger.info(f"✅ عتبة الشراء: {config.BUY_THRESHOLD * 100}%")
     logger.info(f"✅ عتبة البيع: {config.SELL_THRESHOLD * 100}%")
     logger.info(f"✅ النافذة الزمنية: {config.TIME_WINDOW} ثانية")
@@ -199,7 +199,17 @@ async def startup_event():
     await telegram_application.start()
     
     # تهيئة البوت الرئيسي
-    omega_predator = OmegaPredator(telegram_application)
+    mexc_handler_temp = MEXCHandler()
+    all_symbols = await mexc_handler_temp.get_all_symbols()
+    await mexc_handler_temp.close_session() # إغلاق الجلسة المؤقتة
+
+    if not all_symbols:
+        logger.error("❌ فشل في جلب قائمة الرموز من MEXC. إنهاء التشغيل.")
+        return
+
+    logger.info(f"✅ تم جلب {len(all_symbols)} رمز تداول للمراقبة الشاملة.")
+    
+    omega_predator = OmegaPredator(telegram_application, all_symbols)
     
     # بدء WebSocket إذا كان المبلغ محددًا
     asyncio.create_task(omega_predator.start_websocket())
