@@ -215,15 +215,23 @@ async def startup_logic():
     # سنستخدم long-polling ونأمل أن يكون Render قد سمح بذلك.
     # في حالة فشل long-polling، يجب على المستخدم العودة إلى Webhook مع إطار عمل ويب.
     
-    # سنستخدم run_polling كحل مؤقت لتشغيل البوت بشكل مستقل
-    await telegram_application.run_polling(drop_pending_updates=True)
+    # استخدام run_until_disconnected لضمان بقاء حلقة الأحداث مفتوحة بشكل صحيح
+    # هذا هو الأسلوب الموصى به لتشغيل البوتات في بيئات الاستضافة مثل Render
+    await telegram_application.run_until_disconnected(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
+    # تشغيل الدالة الرئيسية مباشرة في حلقة الأحداث الافتراضية
+    # هذا يحل مشكلة "Cannot close a running event loop"
     try:
         asyncio.run(startup_logic())
     except KeyboardInterrupt:
         logger.info("تم إيقاف التشغيل بواسطة المستخدم.")
+    except RuntimeError as e:
+        # تجاهل الخطأ الشائع "Event loop is closed" عند إيقاف التشغيل
+        if "Event loop is closed" not in str(e):
+            logger.error(f"خطأ غير متوقع في التشغيل: {e}")
+            sys.exit(1)
     except Exception as e:
         logger.error(f"خطأ غير متوقع في التشغيل: {e}")
         sys.exit(1)
