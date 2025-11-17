@@ -1,6 +1,6 @@
 """
 Omega Predator - Main Module
-نقطة الدخول الرئيسية للبوت (Web Service - Webhook)
+نقطة الدخول الرئيسية للبوت (Standalone Application)
 """
 
 import asyncio
@@ -8,10 +8,6 @@ import os
 import sys
 import logging
 from typing import Optional, Dict, Any
-
-# FastAPI Dependencies
-from fastapi import FastAPI, Request, Response, status
-import uvicorn
 
 # Telegram Dependencies
 from telegram import Update
@@ -27,9 +23,6 @@ from telegram_handler import TelegramHandler
 # إعداد التسجيل
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-# إنشاء مثيل FastAPI
-app = FastAPI(title="Omega Predator Webhook Bot")
 
 # المتغيرات العامة
 omega_predator: Optional['OmegaPredator'] = None
@@ -168,23 +161,20 @@ class OmegaPredator:
         
         logger.info("✅ تم إيقاف البوت بنجاح")
 
-# --- Webhook Endpoints ---
-
-@app.on_event("startup")
-async def startup_event():
+async def startup_logic():
     """
-    يتم تشغيله عند بدء تشغيل خادم FastAPI
+    منطق بدء التشغيل الرئيسي للتطبيق المستقل
     """
     global omega_predator, telegram_application
     
     logger.info("=" * 50)
-    logger.info("🎯 Omega Predator Webhook Bot Startup")
+    logger.info("🎯 Omega Predator Standalone Bot Startup")
     logger.info("=" * 50)
     
     # التحقق من الإعدادات
     if not config.validate_config():
         logger.error("❌ فشل التحقق من الإعدادات. إنهاء التشغيل.")
-        logger.error("⚠️ سيتم تشغيل الخادم، لكن وظائف البوت الرئيسية ستكون معطلة.")
+        sys.exit(1) # إنهاء التطبيق إذا كانت الإعدادات غير صحيحة
         
     logger.info(f"✅ عتبة الشراء: {config.BUY_THRESHOLD * 100}%")
     logger.info(f"✅ عتبة البيع: {config.SELL_THRESHOLD * 100}%")
@@ -194,9 +184,12 @@ async def startup_event():
     # تهيئة Telegram Application
     telegram_application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     
-    # تهيئة وبدء التطبيق بشكل صريح لـ Webhook
+    # تهيئة وبدء التطبيق
     await telegram_application.initialize()
-    await telegram_application.start()
+    
+    # يجب استخدام long-polling أو webhook هنا. بما أن Render لا يدعم long-polling بسهولة،
+    # سنفترض أن Render سيقوم بتشغيل هذا كخدمة ويب، ولكن بدون FastAPI.
+    # بما أننا حولناه إلى تطبيق مستقل، سنستخدم long-polling.
     
     # تهيئة البوت الرئيسي
     mexc_handler_temp = MEXCHandler()
@@ -205,7 +198,7 @@ async def startup_event():
 
     if not all_symbols:
         logger.error("❌ فشل في جلب قائمة الرموز من MEXC. إنهاء التشغيل.")
-        return
+        sys.exit(1)
 
     logger.info(f"✅ تم جلب {len(all_symbols)} رمز تداول للمراقبة الشاملة.")
     
@@ -214,51 +207,23 @@ async def startup_event():
     # بدء WebSocket إذا كان المبلغ محددًا
     asyncio.create_task(omega_predator.start_websocket())
     
-    # إرسال رسالة الترحيب (نرسلها فقط إذا كانت الإعدادات صحيحة)
-    if config.validate_config():
-        await omega_predator.telegram_handler.send_welcome_message()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    يتم تشغيله عند إيقاف تشغيل خادم FastAPI
-    """
-    if omega_predator:
-        await omega_predator.stop()
+    # إرسال رسالة الترحيب
+    await omega_predator.telegram_handler.send_welcome_message()
     
-    # إيقاف Telegram Application
-    if telegram_application:
-        await telegram_application.stop()
+    # بدء تشغيل البوت (long-polling)
+    # بما أننا في بيئة Render، يجب أن نستخدم وضع Webhook، ولكن بما أننا أزلنا FastAPI،
+    # سنستخدم long-polling ونأمل أن يكون Render قد سمح بذلك.
+    # في حالة فشل long-polling، يجب على المستخدم العودة إلى Webhook مع إطار عمل ويب.
+    
+    # سنستخدم run_polling كحل مؤقت لتشغيل البوت بشكل مستقل
+    await telegram_application.run_polling(drop_pending_updates=True)
 
-@app.post(f"/{config.TELEGRAM_BOT_TOKEN}")
-async def telegram_webhook(request: Request):
-    """
-    معالج Webhook لرسائل Telegram
-    """
-    if not telegram_application:
-        return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-        
+
+if __name__ == "__main__":
     try:
-        # قراءة البيانات من الطلب
-        data = await request.json()
-        
-        # إنشاء كائن Update من البيانات
-        update = Update.de_json(data, telegram_application.bot)
-        
-        # معالجة التحديث
-        await telegram_application.process_update(update)
-        
-        return Response(status_code=status.HTTP_200_OK)
-        
+        asyncio.run(startup_logic())
+    except KeyboardInterrupt:
+        logger.info("تم إيقاف التشغيل بواسطة المستخدم.")
     except Exception as e:
-        logger.error(f"❌ خطأ في معالجة Webhook: {e}")
-        return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-@app.get("/")
-async def root():
-    """
-    نقطة نهاية صحية لـ Render
-    """
-    return {"status": "Omega Predator is running and awaiting Webhook updates."}
-
-# لا نحتاج إلى main() أو if __name__ == "__main__": لأننا نستخدم uvicorn لتشغيل app
+        logger.error(f"خطأ غير متوقع في التشغيل: {e}")
+        sys.exit(1)
