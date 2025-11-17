@@ -164,7 +164,7 @@ class TelegramHandler:
         # يمكن إضافة منطق إضافي هنا لمعالجة الرسائل النصية إذا لزم الأمر
         await update.message.reply_text("⚠️ أمر غير معروف. يرجى استخدام الأوامر المتاحة.")
     
-        # --- وظائف الإشعارات (تبقى كما هي) ---
+    # --- وظائف الإشعارات (تبقى كما هي) ---
     async def notify_buy(self, symbol: str, price: float, quantity: float, amount: float):
         """إشعار بتنفيذ أمر شراء"""
         await self.send_message(
