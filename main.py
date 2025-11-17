@@ -184,9 +184,6 @@ async def startup_logic():
     # تهيئة Telegram Application
     telegram_application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     
-    # تهيئة وبدء التطبيق
-    await telegram_application.initialize()
-    
     # يجب استخدام long-polling أو webhook هنا. بما أن Render لا يدعم long-polling بسهولة،
     # سنفترض أن Render سيقوم بتشغيل هذا كخدمة ويب، ولكن بدون FastAPI.
     # بما أننا حولناه إلى تطبيق مستقل، سنستخدم long-polling.
@@ -215,9 +212,26 @@ async def startup_logic():
     # سنستخدم long-polling ونأمل أن يكون Render قد سمح بذلك.
     # في حالة فشل long-polling، يجب على المستخدم العودة إلى Webhook مع إطار عمل ويب.
     
-    # استخدام run_until_disconnected لضمان بقاء حلقة الأحداث مفتوحة بشكل صحيح
-    # هذا هو الأسلوب الموصى به لتشغيل البوتات في بيئات الاستضافة مثل Render
-    await telegram_application.run_until_disconnected(drop_pending_updates=True)
+    # استخدام run_polling لتشغيل البوت بشكل مستمر
+    # هذا هو الأسلوب الصحيح في python-telegram-bot v20+
+    await telegram_application.initialize()
+    await telegram_application.start()
+    await telegram_application.updater.start_polling(drop_pending_updates=True)
+    
+    # إبقاء البوت يعمل بشكل مستمر
+    try:
+        # حلقة لا نهائية لإبقاء البوت حياً
+        while True:
+            await asyncio.sleep(1)
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("تم إيقاف البوت بواسطة المستخدم")
+    finally:
+        # إيقاف البوت بشكل آمن
+        await telegram_application.updater.stop()
+        await telegram_application.stop()
+        await telegram_application.shutdown()
+        if omega_predator:
+            await omega_predator.stop()
 
 
 if __name__ == "__main__":
