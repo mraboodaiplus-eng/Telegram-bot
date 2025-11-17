@@ -264,7 +264,4 @@ async def root():
     """
     return {"status": "running", "message": "Omega Predator is active and waiting for Telegram webhooks."}
 
-if __name__ == "__main__":
-    # لا يتم تشغيل هذا الجزء في بيئة uvicorn
-    logger.error("❌ يجب تشغيل التطبيق باستخدام uvicorn وليس مباشرة.")
-    sys.exit(1)
+
