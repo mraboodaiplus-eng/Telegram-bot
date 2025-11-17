@@ -10,8 +10,9 @@ import logging
 from typing import Optional, Dict, Any
 
 # Telegram Dependencies
-from telegram import Update
-from telegram.ext import Application
+from telegram import Update, Bot
+from telegram.ext import Application, ApplicationBuilder
+from fastapi import FastAPI, Request, Response
 
 # Local Modules
 import config
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 # المتغيرات العامة
 omega_predator: Optional['OmegaPredator'] = None
 telegram_application: Optional[Application] = None
+app = FastAPI() # كائن FastAPI للتطبيق
 
 class OmegaPredator:
     """
@@ -161,20 +163,26 @@ class OmegaPredator:
         
         logger.info("✅ تم إيقاف البوت بنجاح")
 
-async def startup_logic():
+# =================================================================
+# منطق بدء التشغيل والـ Webhook
+# =================================================================
+
+@app.on_event("startup")
+async def startup_event():
     """
-    منطق بدء التشغيل الرئيسي للتطبيق المستقل
+    منطق بدء التشغيل الرئيسي للتطبيق (يتم تنفيذه مرة واحدة عند بدء تشغيل uvicorn)
     """
     global omega_predator, telegram_application
     
     logger.info("=" * 50)
-    logger.info("🎯 Omega Predator Standalone Bot Startup")
+    logger.info("🎯 Omega Predator Webhook Bot Startup")
     logger.info("=" * 50)
     
     # التحقق من الإعدادات
     if not config.validate_config():
         logger.error("❌ فشل التحقق من الإعدادات. إنهاء التشغيل.")
-        sys.exit(1) # إنهاء التطبيق إذا كانت الإعدادات غير صحيحة
+        # لا يمكننا إنهاء التطبيق مباشرة في startup_event، لكن يمكننا تسجيل خطأ
+        return
         
     logger.info(f"✅ عتبة الشراء: {config.BUY_THRESHOLD * 100}%")
     logger.info(f"✅ عتبة البيع: {config.SELL_THRESHOLD * 100}%")
@@ -182,11 +190,7 @@ async def startup_logic():
     logger.info("=" * 50)
     
     # تهيئة Telegram Application
-    telegram_application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
-    
-    # يجب استخدام long-polling أو webhook هنا. بما أن Render لا يدعم long-polling بسهولة،
-    # سنفترض أن Render سيقوم بتشغيل هذا كخدمة ويب، ولكن بدون FastAPI.
-    # بما أننا حولناه إلى تطبيق مستقل، سنستخدم long-polling.
+    telegram_application = ApplicationBuilder().token(config.TELEGRAM_BOT_TOKEN).build()
     
     # تهيئة البوت الرئيسي
     mexc_handler_temp = MEXCHandler()
@@ -195,7 +199,7 @@ async def startup_logic():
 
     if not all_symbols:
         logger.error("❌ فشل في جلب قائمة الرموز من MEXC. إنهاء التشغيل.")
-        sys.exit(1)
+        return
 
     logger.info(f"✅ تم جلب {len(all_symbols)} رمز تداول للمراقبة الشاملة.")
     
@@ -207,45 +211,60 @@ async def startup_logic():
     # إرسال رسالة الترحيب
     await omega_predator.telegram_handler.send_welcome_message()
     
-    # بدء تشغيل البوت (long-polling)
-    # بما أننا في بيئة Render، يجب أن نستخدم وضع Webhook، ولكن بما أننا أزلنا FastAPI،
-    # سنستخدم long-polling ونأمل أن يكون Render قد سمح بذلك.
-    # في حالة فشل long-polling، يجب على المستخدم العودة إلى Webhook مع إطار عمل ويب.
+    # إعداد Webhook
+    await telegram_application.bot.set_webhook(url=f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/webhook")
     
-    # استخدام run_polling لتشغيل البوت بشكل مستمر
-    # هذا هو الأسلوب الصحيح في python-telegram-bot v20+
+    # بدء تشغيل التطبيق
     await telegram_application.initialize()
     await telegram_application.start()
-    await telegram_application.updater.start_polling(drop_pending_updates=True)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    منطق إيقاف التشغيل (يتم تنفيذه مرة واحدة عند إيقاف تشغيل uvicorn)
+    """
+    global omega_predator, telegram_application
     
-    # إبقاء البوت يعمل بشكل مستمر
-    try:
-        # حلقة لا نهائية لإبقاء البوت حياً
-        while True:
-            await asyncio.sleep(1)
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("تم إيقاف البوت بواسطة المستخدم")
-    finally:
-        # إيقاف البوت بشكل آمن
-        await telegram_application.updater.stop()
+    logger.info("🛑 جاري إيقاف البوت...")
+    
+    # إيقاف Telegram Application
+    if telegram_application:
         await telegram_application.stop()
         await telegram_application.shutdown()
-        if omega_predator:
-            await omega_predator.stop()
+        
+    # إيقاف Omega Predator
+    if omega_predator:
+        await omega_predator.stop()
+        
+    logger.info("✅ تم إيقاف البوت بنجاح")
 
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    """
+    معالج Webhook الرئيسي لـ Telegram
+    """
+    global telegram_application
+    
+    if not telegram_application:
+        return Response(status_code=503) # الخدمة غير متاحة
+        
+    # معالجة التحديث من Telegram
+    update_json = await request.json()
+    update = Update.de_json(update_json, telegram_application.bot)
+    
+    # إرسال التحديث إلى التطبيق
+    await telegram_application.process_update(update)
+    
+    return Response(status_code=200)
+
+@app.get("/")
+async def root():
+    """
+    نقطة نهاية صحية (Health Check)
+    """
+    return {"status": "running", "message": "Omega Predator is active and waiting for Telegram webhooks."}
 
 if __name__ == "__main__":
-    # تشغيل الدالة الرئيسية مباشرة في حلقة الأحداث الافتراضية
-    # هذا يحل مشكلة "Cannot close a running event loop"
-    try:
-        asyncio.run(startup_logic())
-    except KeyboardInterrupt:
-        logger.info("تم إيقاف التشغيل بواسطة المستخدم.")
-    except RuntimeError as e:
-        # تجاهل الخطأ الشائع "Event loop is closed" عند إيقاف التشغيل
-        if "Event loop is closed" not in str(e):
-            logger.error(f"خطأ غير متوقع في التشغيل: {e}")
-            sys.exit(1)
-    except Exception as e:
-        logger.error(f"خطأ غير متوقع في التشغيل: {e}")
-        sys.exit(1)
+    # لا يتم تشغيل هذا الجزء في بيئة uvicorn
+    logger.error("❌ يجب تشغيل التطبيق باستخدام uvicorn وليس مباشرة.")
+    sys.exit(1)
