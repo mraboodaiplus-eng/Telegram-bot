@@ -146,7 +146,7 @@ class TelegramHandler:
             logger.error(f"خطأ في معالجة أمر /amount: {e}")
             await update.message.reply_text("❌ حدث خطأ أثناء معالجة الأمر.")
 
-        async def report_weekly_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def report_weekly_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             """معالجة أمر /report_weekly"""
             if str(update.effective_chat.id) != self.chat_id:
                 await update.message.reply_text("❌ غير مصرح لك باستخدام هذا البوت.")
@@ -156,7 +156,7 @@ class TelegramHandler:
             await update.message.reply_text("⚠️ <b>الأمر قيد التنفيذ.</b>\n\n"
                                             "سيتم تفعيل وظيفة تقرير الأداء الأسبوعي في الإصدارات القادمة.", parse_mode='HTML')
     
-        async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             """معالجة الرسائل النصية غير الأوامر"""
             if str(update.effective_chat.id) != self.chat_id:
                 return
@@ -165,7 +165,7 @@ class TelegramHandler:
             await update.message.reply_text("⚠️ أمر غير معروف. يرجى استخدام الأوامر المتاحة.")
     
         # --- وظائف الإشعارات (تبقى كما هي) ---
-        async def notify_buy(self, symbol: str, price: float, quantity: float, amount: float):
+    async def notify_buy(self, symbol: str, price: float, quantity: float, amount: float):
         """إشعار بتنفيذ أمر شراء"""
         await self.send_message(
             f"🟢 <b>تم تنفيذ أمر شراء</b>\n\n"
@@ -194,6 +194,6 @@ class TelegramHandler:
         """إشعار بحدوث خطأ"""
         await self.send_message(f"❌ <b>خطأ</b>\n\n{error_message}")
 
-        # دالة وهمية للحفاظ على التوافق مع main.py
-        async def stop(self):
-            pass
+    # دالة وهمية للحفاظ على التوافق مع main.py
+    async def stop(self):
+        pass
