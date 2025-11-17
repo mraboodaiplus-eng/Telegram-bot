@@ -69,7 +69,8 @@ class OmegaPredator:
         """تنفيذ أمر شراء فوري"""
         try:
             # ... (منطق التنفيذ كما هو)
-            order = await self.mexc_handler.market_buy(symbol, config.TRADE_AMOUNT_USD)
+            # تمرير السعر الحالي لتقليل زمن الاستجابة
+            order = await self.mexc_handler.market_buy(symbol, config.TRADE_AMOUNT_USD, price)
             
             if order:
                 executed_qty = float(order.get('executedQty', 0))

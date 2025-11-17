@@ -102,7 +102,7 @@ class MEXCHandler:
         
         return None
     
-    async def market_buy(self, symbol: str, amount_usd: float) -> Optional[Dict]:
+    async def market_buy(self, symbol: str, amount_usd: float, current_price: float) -> Optional[Dict]:
         """
         تنفيذ أمر شراء فوري (Market Buy)
         
@@ -116,12 +116,7 @@ class MEXCHandler:
         await self.init_session()
         
         try:
-            # الحصول على السعر الحالي
-            current_price = await self.get_current_price(symbol)
-            if not current_price:
-                return None
-            
-            # حساب الكمية
+            # حساب الكمية بناءً على السعر الفوري الذي تم استقباله من WebSocket
             quantity = amount_usd / current_price
             
             # الحصول على معلومات العملة للدقة
@@ -154,6 +149,7 @@ class MEXCHandler:
                 else:
                     error_text = await response.text()
                     print(f"❌ فشل أمر الشراء: {error_text}")
+                    return None # إضافة return None هنا لضمان الخروج في حالة الفشل
         
         except Exception as e:
             print(f"❌ خطأ في تنفيذ أمر الشراء: {e}")
