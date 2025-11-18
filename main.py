@@ -130,26 +130,21 @@ class OmegaPredator:
     async def on_amount_set(self, amount: float):
         """
         معالج عند تحديد مبلغ الصفقة
-        يبدأ REST API بعد تحديد المبلغ
         """
-        # بدء REST API
+        # لا نحتاج لبدء REST API هنا بعد الآن، لأنه يبدأ مع بدء التشغيل
+        # هذه الدالة فقط لتحديث قيمة config.TRADE_AMOUNT_USD
+    
+    async def start_monitoring(self):
+        """
+        يبدأ مراقبة الأسعار (REST API Polling) عند بدء تشغيل البوت
+        """
+        # بدء REST API Polling فوراً عند بدء التشغيل
         if not self.rest_api_handler:
             self.rest_api_handler = RESTAPIHandler(self.on_trade_received, self.symbols)
             asyncio.ensure_future(self.rest_api_handler.start())
-            # إرسال رسالة تأكيد عند بدء REST API
-            await self.telegram_handler.send_message("🔌 تم بدء مراقبة الأسعار بنجاح")
+            logger.info("🔌 تم بدء مراقبة الأسعار (REST API Polling) فوراً عند بدء التشغيل.")
         else:
-            await self.telegram_handler.send_message("⚠️ مراقبة الأسعار تعمل بالفعل")
-    
-    async def start_websocket(self):
-        """
-        يبدأ WebSocket إذا كان مبلغ التداول محددًا مسبقًا
-        """
-        if config.TRADE_AMOUNT_USD > 0:
-            logger.info(f"✅ تم تحديد مبلغ الصفقة مسبقًا: ${config.TRADE_AMOUNT_USD}. بدء المراقبة.")
-            await self.on_amount_set(config.TRADE_AMOUNT_USD)
-        else:
-            logger.warning("⚠️ لم يتم تحديد مبلغ الصفقة. البوت في وضع الاستعداد.")
+            logger.warning("⚠️ مراقبة الأسعار تعمل بالفعل.")
             
     async def stop(self):
         """
@@ -213,8 +208,8 @@ async def startup_event():
     
     omega_predator = OmegaPredator(telegram_application, all_symbols)
     
-    # بدء WebSocket إذا كان المبلغ محددًا
-    await omega_predator.start_websocket()
+    # بدء المراقبة فوراً
+    await omega_predator.start_monitoring()
     
     # إرسال رسالة الترحيب
     await omega_predator.telegram_handler.send_welcome_message()
