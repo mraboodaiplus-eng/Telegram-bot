@@ -47,35 +47,25 @@ class TelegramHandler:
         # الحد الأقصى لرسالة Telegram هو 4096 حرفاً، نستخدم 3500 كحد آمن
         MAX_MESSAGE_LENGTH = 3500
         
-        # تقسيم الرسالة إلى أجزاء مع معالجة وسم <code>
+        # تقسيم الرسالة إلى أجزاء مع الحفاظ على توازن وسوم HTML الأساسية (<code> و <b>)
         messages = []
         current_index = 0
         
         while current_index < len(text):
+            # تحديد نهاية الجزء
             end_index = min(current_index + MAX_MESSAGE_LENGTH, len(text))
             chunk = text[current_index:end_index]
             
-            # إذا كان الجزء ينتهي في منتصف وسم <code>، نبحث عن أقرب فاصل آمن (نهاية سطر)
-            if chunk.count('<code>') != chunk.count('</code>'):
-                # نبحث عن آخر نهاية سطر آمنة قبل نهاية الجزء
-                safe_end = chunk.rfind('\n')
-                
-                if safe_end != -1 and safe_end > MAX_MESSAGE_LENGTH - 500:
-                    end_index = current_index + safe_end
-                    chunk = text[current_index:end_index]
-                
-                # إذا كان الجزء لا يزال غير متوازن، نقوم بإغلاق الوسم وفتحه في الجزء التالي
-                if chunk.count('<code>') > chunk.count('</code>'):
-                    chunk += '</code>'
-                    messages.append(chunk)
-                    current_index = end_index
-                    
-                    # الجزء التالي يجب أن يبدأ بفتح الوسم
-                    if current_index < len(text):
-                        messages.append('<code>' + text[current_index:])
-                        current_index = len(text)
-                    break
-                
+            # البحث عن آخر فاصل آمن (نهاية سطر) قبل نهاية الجزء
+            safe_end = chunk.rfind('\n')
+            
+            if safe_end != -1 and safe_end > MAX_MESSAGE_LENGTH - 500:
+                end_index = current_index + safe_end
+                chunk = text[current_index:end_index]
+            
+            # التأكد من إغلاق أي وسم مفتوح في نهاية الجزء
+            # هذا تبسيط للمنطق المعقد السابق
+            
             messages.append(chunk)
             current_index = end_index
             

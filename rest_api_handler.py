@@ -114,11 +114,11 @@ class RESTAPIHandler:
                             )
                 
         except asyncio.TimeoutError:
-            # تجاهل timeout بدون طباعة (لتقليل الضوضاء)
+            # يتم تجاهل أخطاء Timeout لأنها متوقعة في بيئة polling سريعة
             pass
         except Exception as e:
-            # تجاهل الأخطاء الأخرى (لتقليل الضوضاء)
-            pass
+            # تسجيل الأخطاء الأخرى للمساعدة في التشخيص
+            print(f"⚠️ خطأ في fetch_trades لـ {symbol}: {e}")
     
     async def stop(self):
         """

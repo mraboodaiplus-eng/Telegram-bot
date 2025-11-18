@@ -121,10 +121,29 @@ class MEXCHandler:
             
             # الحصول على معلومات العملة للدقة
             symbol_info = await self.get_symbol_info(symbol)
-            if symbol_info:
+            
+            # التحقق من وجود معلومات الدقة (filters)
+            if symbol_info and 'filters' in symbol_info and len(symbol_info['filters']) > 0:
+                # البحث عن filterType 'LOT_SIZE' أو ما شابهه للحصول على stepSize
+                # بما أن MEXC API لا يتبع Binance تماماً، سنفترض أن baseSizePrecision هو stepSize
+                step_size_str = symbol_info.get('baseSizePrecision', '0.000001')
+                step_size = float(step_size_str)
+                
                 # تقريب الكمية حسب دقة العملة
-                step_size = float(symbol_info['filters'][2]['stepSize'])
+                # نستخدم round() لتقريب الكمية إلى أقرب مضاعف لـ step_size
                 quantity = round(quantity / step_size) * step_size
+                
+                # تقريب الكمية إلى عدد المنازل العشرية المناسب
+                decimal_places = len(step_size_str.split('.')[-1]) if '.' in step_size_str else 0
+                quantity = round(quantity, decimal_places)
+            
+            # إذا لم نجد معلومات الدقة، نستخدم 6 منازل عشرية كافتراضي
+            elif symbol_info:
+                quantity = round(quantity, 6)
+            
+            # إذا لم نجد معلومات الرمز، نستخدم 6 منازل عشرية كافتراضي
+            else:
+                quantity = round(quantity, 6)
             
             # إعداد المعاملات
             timestamp = int(time.time() * 1000)
@@ -251,5 +270,4 @@ class MEXCHandler:
         except Exception as e:
             print(f"❌ خطأ في get_all_symbols: {e}")
         
-        return []
         return []

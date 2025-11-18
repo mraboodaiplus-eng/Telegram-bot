@@ -43,6 +43,7 @@ class TradingEngine:
             timestamp: الطابع الزمني (Unix timestamp)
         """
         if symbol not in self.price_windows:
+            # print(f"⚠️ تحذير: محاولة إضافة سعر لرمز غير مراقب: {symbol}") # تم التعليق لتقليل الضوضاء
             return
         
         self.price_windows[symbol].append({
@@ -59,6 +60,7 @@ class TradingEngine:
             current_time: الوقت الحالي (Unix timestamp)
         """
         if symbol not in self.price_windows:
+            # print(f"⚠️ تحذير: محاولة إضافة سعر لرمز غير مراقب: {symbol}") # تم التعليق لتقليل الضوضاء
             return
         
         window = self.price_windows[symbol]

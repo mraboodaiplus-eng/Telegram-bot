@@ -42,6 +42,7 @@ class OmegaPredator:
         self.mexc_handler = MEXCHandler()
         self.telegram_handler = TelegramHandler(application)
         self.rest_api_handler = None
+        self.websocket_handler = None # إضافة تعريف
         self.running = False
         
         # تعيين callback لتحديد المبلغ
@@ -160,6 +161,10 @@ class OmegaPredator:
         # إيقاف WebSocket
         if self.websocket_handler:
             await self.websocket_handler.disconnect()
+            
+        # إيقاف REST API Handler
+        if self.rest_api_handler:
+            await self.rest_api_handler.stop()
         
         # إغلاق جلسة MEXC
         await self.mexc_handler.close_session()
