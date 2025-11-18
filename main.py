@@ -131,12 +131,17 @@ class OmegaPredator:
         معالج عند تحديد مبلغ الصفقة
         يبدأ WebSocket بعد تحديد المبلغ
         """
+        logger.info(f"🔔 تم استدعاء on_amount_set بمبلغ: ${amount}")
+        
         # بدء WebSocket
         if not self.websocket_handler:
+            logger.info("🔌 جاري إنشاء WebSocketHandler...")
             self.websocket_handler = WebSocketHandler(self.on_trade_received, self.symbols)
+            logger.info("🚀 جاري بدء WebSocket...")
             asyncio.create_task(self.websocket_handler.start())
+            logger.info("✅ تم بدء مهمة WebSocket بنجاح")
         else:
-            logger.info("WebSocket already running.")
+            logger.info("⚠️ WebSocket already running.")
     
     async def start_websocket(self):
         """

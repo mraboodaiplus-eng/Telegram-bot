@@ -128,6 +128,7 @@ class WebSocketHandler:
                 await asyncio.sleep(1)
     
     async def start(self):
+        print("🔌 بدء دالة WebSocketHandler.start()")
         """
         بدء WebSocket مع إعادة الاتصال التلقائي
         """
