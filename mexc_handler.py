@@ -23,6 +23,7 @@ class MEXCHandler:
         self.secret_key = config.MEXC_SECRET_KEY
         self.base_url = config.MEXC_BASE_URL
         self.session: Optional[aiohttp.ClientSession] = None
+        self.symbol_precision: Dict[str, Dict] = {} # تخزين معلومات الدقة
     
     async def init_session(self):
         """تهيئة جلسة HTTP غير متزامنة"""
@@ -62,7 +63,10 @@ class MEXCHandler:
             
         Returns:
             معلومات العملة أو None في حالة الفشل
-        """
+        # إذا كانت المعلومات مخزنة بالفعل، نرجعها
+        if symbol in self.symbol_precision:
+            return self.symbol_precision[symbol]
+        
         await self.init_session()
         
         try:
@@ -72,11 +76,13 @@ class MEXCHandler:
                     data = await response.json()
                     for s in data.get('symbols', []):
                         if s['symbol'] == symbol:
+                            # تخزين المعلومات قبل إرجاعها
+                            self.symbol_precision[symbol] = s
                             return s
         except Exception as e:
             print(f"❌ خطأ في الحصول على معلومات {symbol}: {e}")
         
-        return None
+        return Noneone
     
     async def get_current_price(self, symbol: str) -> Optional[float]:
         """
@@ -119,13 +125,12 @@ class MEXCHandler:
             # حساب الكمية بناءً على السعر الفوري الذي تم استقباله من WebSocket
             quantity = amount_usd / current_price
             
-            # الحصول على معلومات العملة للدقة
+            # الحصول على معلومات العملة للدقة (يتم جلبها مرة واحدة وتخزينها)
             symbol_info = await self.get_symbol_info(symbol)
             
-            # التحقق من وجود معلومات الدقة (filters)
-            if symbol_info and 'filters' in symbol_info and len(symbol_info['filters']) > 0:
-                # البحث عن filterType 'LOT_SIZE' أو ما شابهه للحصول على stepSize
-                # بما أن MEXC API لا يتبع Binance تماماً، سنفترض أن baseSizePrecision هو stepSize
+            # منطق تقريب الكمية
+            if symbol_info:
+                # نستخدم baseSizePrecision لتقريب الكمية
                 step_size_str = symbol_info.get('baseSizePrecision', '0.000001')
                 step_size = float(step_size_str)
                 
@@ -136,10 +141,6 @@ class MEXCHandler:
                 # تقريب الكمية إلى عدد المنازل العشرية المناسب
                 decimal_places = len(step_size_str.split('.')[-1]) if '.' in step_size_str else 0
                 quantity = round(quantity, decimal_places)
-            
-            # إذا لم نجد معلومات الدقة، نستخدم 6 منازل عشرية كافتراضي
-            elif symbol_info:
-                quantity = round(quantity, 6)
             
             # إذا لم نجد معلومات الرمز، نستخدم 6 منازل عشرية كافتراضي
             else:
@@ -263,6 +264,12 @@ class MEXCHandler:
                     data = await response.json()
                     # تصفية الرموز التي تنتهي بـ USDT فقط
                     symbols = [s['symbol'] for s in data.get('symbols', []) if s['symbol'].endswith('USDT')]
+                    
+                    # تخزين معلومات الدقة لجميع الرموز التي تم جلبها
+                    for s in data.get('symbols', []):
+                        if s['symbol'] in symbols:
+                            self.symbol_precision[s['symbol']] = s
+                            
                     return symbols
                 else:
                     error_text = await response.text()

@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request, Response
 import config
 from trading_logic import TradingEngine
 from mexc_handler import MEXCHandler
-from rest_api_handler import RESTAPIHandler
+from websocket_handler import MEXCWebSocketHandler
 from telegram_handler import TelegramHandler
 
 # إعداد التسجيل
@@ -41,9 +41,10 @@ class OmegaPredator:
         self.trading_engine = TradingEngine(symbols)
         self.mexc_handler = MEXCHandler()
         self.telegram_handler = TelegramHandler(application)
-        self.rest_api_handler = None
-        self.websocket_handler = None # إضافة تعريف
+        self.websocket_handler: Optional[MEXCWebSocketHandler] = None
         self.running = False
+        # نقل مسؤولية تخزين تفاصيل الصفقات المفتوحة إلى OmegaPredator
+        self.open_positions: Dict[str, Dict] = {}
         
         # تعيين callback لتحديد المبلغ
         self.telegram_handler.on_amount_set = self.on_amount_set
@@ -54,6 +55,10 @@ class OmegaPredator:
         هذه هي الحلقة الساخنة (Hot Loop) - يجب أن تكون سريعة للغاية
         """
         # إضافة السعر للنافذة الزمنية
+        # التأكد من أن البوت في وضع التداول (تم تحديد المبلغ)
+        if config.TRADE_AMOUNT_USD <= 0:
+            return
+            
         # استخدام الدالة الجديدة process_new_trade
         action = self.trading_engine.process_new_trade(symbol, price)
         
@@ -79,9 +84,12 @@ class OmegaPredator:
                 # تحديث حالة الصفقة في TradingEngine
                 self.trading_engine.open_position(symbol, executed_price)
                 
-                # تخزين تفاصيل الصفقة في مكان آخر (هنا سنستخدم TradingEngine مؤقتاً لتخزين الكمية)
-                # ملاحظة: الكود الجديد لا يخزن الكمية، سنحتاج لتخزينها يدوياً
-                self.trading_engine.positions[symbol]['quantity'] = executed_qty
+                # تخزين تفاصيل الصفقة في OmegaPredator
+                self.open_positions[symbol] = {
+                    'buy_price': executed_price,
+                    'quantity': executed_qty,
+                    'peak_price': executed_price # يتم تحديثها في TradingEngine
+                }
                 
                 await self.telegram_handler.notify_buy(
                     symbol, 
@@ -103,13 +111,18 @@ class OmegaPredator:
         """تنفيذ أمر بيع فوري"""
         try:
             # ... (منطق التنفيذ كما هو)
-            # استرجاع البيانات قبل الإغلاق
-            position_data = self.trading_engine.positions[symbol]
-            buy_price = position_data.get('buy_price', 0.0)
-            quantity = position_data.get('quantity', 0.0)
+            # استرجاع البيانات من open_positions
+            if symbol not in self.open_positions:
+                await self.telegram_handler.notify_error(f"❌ خطأ: محاولة بيع {symbol} بدون صفقة مفتوحة مسجلة.")
+                return
+                
+            buy_price = self.open_positions[symbol]['buy_price']
+            quantity = self.open_positions[symbol]['quantity']
             
             # إغلاق الصفقة في TradingEngine
             self.trading_engine.close_position(symbol)
+            # إزالة الصفقة من open_positions
+            del self.open_positions[symbol]
             
             order = await self.mexc_handler.market_sell(symbol, quantity)
             
@@ -127,10 +140,13 @@ class OmegaPredator:
                     profit_percent
                 )
             else:
-                # إذا فشل البيع، يجب إعادة فتح الصفقة
+                # إذا فشل البيع، يجب إعادة فتح الصفقة في TradingEngine وإعادة تسجيلها في open_positions
                 self.trading_engine.open_position(symbol, buy_price)
-                # وإعادة الكمية وتفاصيل الشراء الأخرى
-                self.trading_engine.positions[symbol]['quantity'] = quantity
+                self.open_positions[symbol] = {
+                    'buy_price': buy_price,
+                    'quantity': quantity,
+                    'peak_price': self.trading_engine.positions[symbol]['peak_price']
+                }
                 
                 await self.telegram_handler.notify_error(
                     f"فشل تنفيذ أمر بيع {symbol}"
@@ -145,19 +161,18 @@ class OmegaPredator:
         """
         معالج عند تحديد مبلغ الصفقة
         """
-        # لا نحتاج لبدء REST API هنا بعد الآن، لأنه يبدأ مع بدء التشغيل
-        # هذه الدالة فقط لتحديث قيمة config.TRADE_AMOUNT_USD
         config.TRADE_AMOUNT_USD = amount
+        logger.info(f"✅ تم تحديد مبلغ التداول: {amount} USD")
     
     async def start_monitoring(self):
         """
-        يبدأ مراقبة الأسعار (REST API Polling) عند بدء تشغيل البوت
+        يبدأ مراقبة الأسعار (WebSocket) عند بدء تشغيل البوت
         """
-        # بدء REST API Polling فوراً عند بدء التشغيل
-        if not self.rest_api_handler:
-            self.rest_api_handler = RESTAPIHandler(self.on_trade_received, self.symbols)
-            asyncio.ensure_future(self.rest_api_handler.start())
-            logger.info("🔌 تم بدء مراقبة الأسعار (REST API Polling) فوراً عند بدء التشغيل.")
+        # بدء WebSocket فوراً عند بدء التشغيل
+        if not self.websocket_handler:
+            self.websocket_handler = MEXCWebSocketHandler(self.on_trade_received, self.symbols)
+            asyncio.ensure_future(self.websocket_handler.start())
+            logger.info("🔌 تم بدء مراقبة الأسعار (WebSocket) فوراً عند بدء التشغيل.")
         else:
             logger.warning("⚠️ مراقبة الأسعار تعمل بالفعل.")
             
@@ -172,10 +187,6 @@ class OmegaPredator:
         if self.websocket_handler:
             await self.websocket_handler.disconnect()
             
-        # إيقاف REST API Handler
-        if self.rest_api_handler:
-            await self.rest_api_handler.stop()
-        
         # إغلاق جلسة MEXC
         await self.mexc_handler.close_session()
         
@@ -212,6 +223,7 @@ async def startup_event():
     
     # تهيئة البوت الرئيسي
     mexc_handler_temp = MEXCHandler()
+    # جلب جميع الرموز وتخزين معلومات الدقة مرة واحدة
     all_symbols = await mexc_handler_temp.get_all_symbols()
     await mexc_handler_temp.close_session() # إغلاق الجلسة المؤقتة
 
