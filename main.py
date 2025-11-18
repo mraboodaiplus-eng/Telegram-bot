@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request, Response
 import config
 from trading_logic import TradingEngine
 from mexc_handler import MEXCHandler
-from websocket_handler import WebSocketHandler
+from rest_api_handler import RESTAPIHandler
 from telegram_handler import TelegramHandler
 
 # إعداد التسجيل
@@ -41,7 +41,7 @@ class OmegaPredator:
         self.trading_engine = TradingEngine(symbols)
         self.mexc_handler = MEXCHandler()
         self.telegram_handler = TelegramHandler(application)
-        self.websocket_handler: Optional[WebSocketHandler] = None
+        self.rest_api_handler = None
         self.running = False
         
         # تعيين callback لتحديد المبلغ
@@ -129,13 +129,13 @@ class OmegaPredator:
     async def on_amount_set(self, amount: float):
         """
         معالج عند تحديد مبلغ الصفقة
-        يبدأ WebSocket بعد تحديد المبلغ
+        يبدأ REST API بعد تحديد المبلغ
         """
-        # بدء WebSocket
-        if not self.websocket_handler:
-            self.websocket_handler = WebSocketHandler(self.on_trade_received, self.symbols)
-            asyncio.ensure_future(self.websocket_handler.start())
-            # إرسال رسالة تأكيد عند بدء WebSocket
+        # بدء REST API
+        if not self.rest_api_handler:
+            self.rest_api_handler = RESTAPIHandler(self.on_trade_received, self.symbols)
+            asyncio.ensure_future(self.rest_api_handler.start())
+            # إرسال رسالة تأكيد عند بدء REST API
             await self.telegram_handler.send_message("🔌 تم بدء مراقبة الأسعار بنجاح")
         else:
             await self.telegram_handler.send_message("⚠️ مراقبة الأسعار تعمل بالفعل")
