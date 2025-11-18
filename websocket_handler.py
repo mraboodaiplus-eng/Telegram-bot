@@ -35,7 +35,11 @@ class WebSocketHandler:
         """
         try:
             print(f"🔌 جاري الاتصال بـ {self.ws_url}")
-            self.websocket = await websockets.connect(self.ws_url)
+            # إضافة timeout بمدة 10 ثواني
+            self.websocket = await asyncio.wait_for(
+                websockets.connect(self.ws_url),
+                timeout=10.0
+            )
             self.running = True
             print("✅ تم الاتصال بنجاح")
             
@@ -52,6 +56,9 @@ class WebSocketHandler:
             
             print("✅ تم الاشتراك بنجاح")
             
+        except asyncio.TimeoutError:
+            print("⚠️ انقطع الاتصال بسبب timeout (10 ثواني)")
+            self.running = False
         except Exception as e:
             print(f"❌ فشل الاتصال: {e}")
             self.running = False
