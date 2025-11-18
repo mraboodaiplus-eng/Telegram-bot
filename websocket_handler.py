@@ -34,10 +34,13 @@ class WebSocketHandler:
         الاتصال بـ WebSocket والاشتراك في القنوات
         """
         try:
+            print(f"🔌 جاري الاتصال بـ {self.ws_url}")
             self.websocket = await websockets.connect(self.ws_url)
             self.running = True
+            print("✅ تم الاتصال بنجاح")
             
             # الاشتراك في قنوات الصفقات لجميع العملات التي تم جلبها
+            print(f"📡 جاري الاشتراك في {len(self.symbols)} قنوات...")
             for symbol in self.symbols:
                 subscribe_message = {
                     "method": "SUBSCRIPTION",
@@ -47,20 +50,21 @@ class WebSocketHandler:
                 }
                 await self.websocket.send(json.dumps(subscribe_message))
             
-            print("✅ تم الاتصال بـ WebSocket بنجاح")
+            print("✅ تم الاشتراك بنجاح")
             
         except Exception as e:
-            print(f"❌ فشل الاتصال بـ WebSocket: {e}")
+            print(f"❌ فشل الاتصال: {e}")
             self.running = False
     
     async def listen(self):
         """
-        الاستماع للرسائل الواردة من WebSocket
+        الاستماع للرسالل الواردة من WebSocket
         """
         if not self.websocket:
             print("❌ WebSocket غير متصل")
             return
         
+        print("📡 بدء الاستماع للرسالل...")
         try:
             async for message in self.websocket:
                 if not self.running:
@@ -69,7 +73,7 @@ class WebSocketHandler:
                 try:
                     data = json.loads(message)
                     
-                    # معالجة رسائل الصفقات
+                    # معالجة رسالل الصفقات
                     if 'c' in data and 'd' in data:
                         channel = data['c']
                         deals = data['d'].get('deals', [])
@@ -78,6 +82,8 @@ class WebSocketHandler:
                         # مثال: "spot@public.deals.v3.api@BTCUSDT"
                         if 'spot@public.deals.v3.api@' in channel:
                             symbol = channel.split('@')[-1]
+                            if deals:
+                                print(f"📊 استقبلنا {len(deals)} صفقة لـ {symbol}")
                             
                             # معالجة كل صفقة
                             for deal in deals:
@@ -128,14 +134,17 @@ class WebSocketHandler:
                 await asyncio.sleep(1)
     
     async def start(self):
-        print("🔌 بدء دالة WebSocketHandler.start()")
         """
         بدء WebSocket مع إعادة الاتصال التلقائي
         """
+        print("🔌 بدء دالة WebSocketHandler.start()")
         await self.connect()
         
         # بدء مهمتين متوازيتين: الاستماع وإعادة الاتصال
+        print("📡 بدء مهام الاستماع وإعادة الاتصال...")
         listen_task = asyncio.create_task(self.listen())
         reconnect_task = asyncio.create_task(self.reconnect())
         
+        print("⏳ في انتظار مهام WebSocket...")
         await asyncio.gather(listen_task, reconnect_task)
+        print("🏁 انتهت مهام WebSocket")
