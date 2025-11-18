@@ -52,11 +52,6 @@ class OmegaPredator:
         معالج استقبال صفقة جديدة من WebSocket
         هذه هي الحلقة الساخنة (Hot Loop) - يجب أن تكون سريعة للغاية
         """
-        # إرسال رسالة تأكيد عند استقبال أول صفقة
-        if not hasattr(self, '_first_trade_received'):
-            self._first_trade_received = True
-            await self.telegram_handler.send_message("📊 تم بدء استقبال بيانات الصفقات")
-        
         # إضافة السعر للنافذة الزمنية
         self.trading_engine.add_price(symbol, price, timestamp)
         
