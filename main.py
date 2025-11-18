@@ -133,6 +133,7 @@ class OmegaPredator:
         """
         # لا نحتاج لبدء REST API هنا بعد الآن، لأنه يبدأ مع بدء التشغيل
         # هذه الدالة فقط لتحديث قيمة config.TRADE_AMOUNT_USD
+        config.TRADE_AMOUNT_USD = amount
     
     async def start_monitoring(self):
         """
