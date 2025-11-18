@@ -138,7 +138,8 @@ class OmegaPredator:
             logger.info("🔌 جاري إنشاء WebSocketHandler...")
             self.websocket_handler = WebSocketHandler(self.on_trade_received, self.symbols)
             logger.info("🚀 جاري بدء WebSocket...")
-            asyncio.create_task(self.websocket_handler.start())
+            # استخدام asyncio.ensure_future بدلاً من create_task للتوافق مع Webhook
+            asyncio.ensure_future(self.websocket_handler.start())
             logger.info("✅ تم بدء مهمة WebSocket بنجاح")
         else:
             logger.info("⚠️ WebSocket already running.")
@@ -148,8 +149,8 @@ class OmegaPredator:
         يبدأ WebSocket إذا كان مبلغ التداول محددًا مسبقًا
         """
         if config.TRADE_AMOUNT_USD > 0:
-            await self.on_amount_set(config.TRADE_AMOUNT_USD)
             logger.info(f"✅ تم تحديد مبلغ الصفقة مسبقًا: ${config.TRADE_AMOUNT_USD}. بدء المراقبة.")
+            await self.on_amount_set(config.TRADE_AMOUNT_USD)
         else:
             logger.warning("⚠️ لم يتم تحديد مبلغ الصفقة. البوت في وضع الاستعداد.")
             
@@ -212,7 +213,7 @@ async def startup_event():
     omega_predator = OmegaPredator(telegram_application, all_symbols)
     
     # بدء WebSocket إذا كان المبلغ محددًا
-    asyncio.create_task(omega_predator.start_websocket())
+    await omega_predator.start_websocket()
     
     # إرسال رسالة الترحيب
     await omega_predator.telegram_handler.send_welcome_message()
