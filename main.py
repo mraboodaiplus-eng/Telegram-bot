@@ -54,15 +54,14 @@ class OmegaPredator:
         هذه هي الحلقة الساخنة (Hot Loop) - يجب أن تكون سريعة للغاية
         """
         # إضافة السعر للنافذة الزمنية
-        self.trading_engine.add_price(symbol, price, timestamp)
+        # استخدام الدالة الجديدة process_new_trade
+        action = self.trading_engine.process_new_trade(symbol, price)
         
-        # فحص شرط الشراء
-        if self.trading_engine.check_buy_condition(symbol, price, timestamp):
+        if action == 'BUY':
             # تنفيذ الشراء فورًا - لا تأخير
             asyncio.create_task(self.execute_buy(symbol, price))
         
-        # فحص شرط البيع (إذا كان لدينا صفقة مفتوحة)
-        elif self.trading_engine.check_sell_condition(symbol, price):
+        elif action == 'SELL':
             # تنفيذ البيع فورًا - لا تأخير
             asyncio.create_task(self.execute_sell(symbol, price))
     
@@ -77,7 +76,12 @@ class OmegaPredator:
                 executed_qty = float(order.get('executedQty', 0))
                 executed_price = float(order.get('price', price))
                 
-                self.trading_engine.open_position(symbol, executed_price, executed_qty)
+                # تحديث حالة الصفقة في TradingEngine
+                self.trading_engine.open_position(symbol, executed_price)
+                
+                # تخزين تفاصيل الصفقة في مكان آخر (هنا سنستخدم TradingEngine مؤقتاً لتخزين الكمية)
+                # ملاحظة: الكود الجديد لا يخزن الكمية، سنحتاج لتخزينها يدوياً
+                self.trading_engine.positions[symbol]['quantity'] = executed_qty
                 
                 await self.telegram_handler.notify_buy(
                     symbol, 
@@ -99,7 +103,13 @@ class OmegaPredator:
         """تنفيذ أمر بيع فوري"""
         try:
             # ... (منطق التنفيذ كما هو)
-            buy_price, peak_price, quantity = self.trading_engine.close_position(symbol)
+            # استرجاع البيانات قبل الإغلاق
+            position_data = self.trading_engine.positions[symbol]
+            buy_price = position_data.get('buy_price', 0.0)
+            quantity = position_data.get('quantity', 0.0)
+            
+            # إغلاق الصفقة في TradingEngine
+            self.trading_engine.close_position(symbol)
             
             order = await self.mexc_handler.market_sell(symbol, quantity)
             
@@ -117,7 +127,11 @@ class OmegaPredator:
                     profit_percent
                 )
             else:
-                self.trading_engine.open_position(symbol, buy_price, quantity)
+                # إذا فشل البيع، يجب إعادة فتح الصفقة
+                self.trading_engine.open_position(symbol, buy_price)
+                # وإعادة الكمية وتفاصيل الشراء الأخرى
+                self.trading_engine.positions[symbol]['quantity'] = quantity
+                
                 await self.telegram_handler.notify_error(
                     f"فشل تنفيذ أمر بيع {symbol}"
                 )
