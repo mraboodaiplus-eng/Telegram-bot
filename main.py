@@ -52,6 +52,11 @@ class OmegaPredator:
         معالج استقبال صفقة جديدة من WebSocket
         هذه هي الحلقة الساخنة (Hot Loop) - يجب أن تكون سريعة للغاية
         """
+        # إرسال رسالة تأكيد عند استقبال أول صفقة
+        if not hasattr(self, '_first_trade_received'):
+            self._first_trade_received = True
+            await self.telegram_handler.send_message("📊 تم بدء استقبال بيانات الصفقات")
+        
         # إضافة السعر للنافذة الزمنية
         self.trading_engine.add_price(symbol, price, timestamp)
         
@@ -131,18 +136,14 @@ class OmegaPredator:
         معالج عند تحديد مبلغ الصفقة
         يبدأ WebSocket بعد تحديد المبلغ
         """
-        logger.info(f"🔔 تم استدعاء on_amount_set بمبلغ: ${amount}")
-        
         # بدء WebSocket
         if not self.websocket_handler:
-            logger.info("🔌 جاري إنشاء WebSocketHandler...")
             self.websocket_handler = WebSocketHandler(self.on_trade_received, self.symbols)
-            logger.info("🚀 جاري بدء WebSocket...")
-            # استخدام asyncio.ensure_future بدلاً من create_task للتوافق مع Webhook
             asyncio.ensure_future(self.websocket_handler.start())
-            logger.info("✅ تم بدء مهمة WebSocket بنجاح")
+            # إرسال رسالة تأكيد عند بدء WebSocket
+            await self.telegram_handler.send_message("🔌 تم بدء مراقبة الأسعار بنجاح")
         else:
-            logger.info("⚠️ WebSocket already running.")
+            await self.telegram_handler.send_message("⚠️ مراقبة الأسعار تعمل بالفعل")
     
     async def start_websocket(self):
         """
