@@ -28,30 +28,44 @@ class MEXCHandler:
         ).hexdigest()
 
     async def get_all_pairs(self):
-        """جلب وفلترة كل العملات المتاحة"""
+        """جلب العملات مع تخفيف القيود وطباعة عينة للتشخيص"""
         url = f"{self.base_url}/api/v3/exchangeInfo"
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(url) as response:
                     if response.status == 200:
                         data = await response.json()
+                        
+                        # --- Debug Start: طباعة عينة من البيانات القادمة ---
+                        if 'symbols' in data and len(data['symbols']) > 0:
+                            logger.info(f"🔍 DEBUG: Sample Data from MEXC: {data['symbols'][0]}")
+                        else:
+                            logger.error("⚠️ API returned empty symbols list! Check Server Region.")
+                        # ----------------------------------------------------
+
                         symbols = []
-                        for s in data['symbols']:
+                        for s in data.get('symbols', []):
                             name = s['symbol']
-                            # الشروط: USDT، مفعلة، وليست ETF خطرة
+                            
+                            # التعديل: إزالة شرط 'status' الصارم مؤقتاً لضمان الجلب
+                            # والاكتفاء بأن العملة تنتهي بـ USDT وليست محظورة
                             if (name.endswith('USDT') and 
-                                s['status'] == 'ENABLED' and 
                                 not any(ex in name for ex in Config.EXCLUDED_PATTERNS)):
                                 symbols.append(name)
                         
                         self.target_symbols = symbols
-                        logger.info(f"✅ تم تجهيز {len(symbols)} عملة للمراقبة (تم استبعاد ETFs).")
+                        
+                        if len(symbols) > 0:
+                            logger.info(f"✅ تم تجهيز {len(symbols)} عملة للمراقبة.")
+                        else:
+                            logger.warning("⚠️ تم الاتصال ولكن لم يتم العثور على أزواج USDT! قد يكون IP محظوراً.")
+                            
                         return symbols
                     else:
-                        logger.error("❌ فشل جلب العملات.")
+                        logger.error(f"❌ فشل جلب العملات. Status: {response.status}")
                         return []
             except Exception as e:
-                logger.error(f"💥 خطأ اتصال: {e}")
+                logger.error(f"💥 خطأ اتصال HTTP: {e}")
                 return []
 
     async def place_order(self, symbol, side, quantity=None, quote_qty=None):
@@ -66,11 +80,10 @@ class MEXCHandler:
                 'recvWindow': 5000
             }
             
-            # شراء بالمبلغ (USD) أو بيع بالكمية (Token)
             if side.upper() == 'BUY' and quote_qty:
                 params['quoteOrderQty'] = str(quote_qty)
             elif side.upper() == 'SELL' and quantity:
-                params['quantity'] = f"{quantity:.4f}" # تقريب بسيط
+                params['quantity'] = f"{quantity:.4f}"
             
             query_string = urlencode(params)
             signature = self._generate_signature(query_string)
@@ -91,17 +104,23 @@ class MEXCHandler:
                 return False
 
     async def start_websocket(self):
-        """اتصال دائم مع تقسيم الاشتراكات"""
+        """اتصال دائم"""
         if not self.target_symbols:
+            await self.get_all_pairs()
+
+        # إذا فشل في جلب العملات، حاول مرة أخرى كل 10 ثواني
+        while not self.target_symbols:
+            logger.warning("⚠️ No symbols found. Retrying in 10s...")
+            await asyncio.sleep(10)
             await self.get_all_pairs()
 
         while True:
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.ws_connect(self.ws_url) as ws:
-                        logger.info("🌐 WebSocket Connected.")
+                        logger.info(f"🌐 WebSocket Connected. Subscribing to {len(self.target_symbols)} pairs...")
                         
-                        # تقسيم الاشتراكات لدفعات (Batches) لتجنب فصل الاتصال
+                        # تقسيم الاشتراكات لدفعات (Batches)
                         chunk_size = 30
                         for i in range(0, len(self.target_symbols), chunk_size):
                             batch = self.target_symbols[i:i + chunk_size]
@@ -110,7 +129,7 @@ class MEXCHandler:
                                 "params": [f"spot@public.deals.v3.api@{s}" for s in batch]
                             }
                             await ws.send_json(params)
-                            await asyncio.sleep(0.1) # تأخير بسيط جداً لمنع الازدحام
+                            await asyncio.sleep(0.1) 
                         
                         logger.info("✅ All subscriptions sent.")
 
