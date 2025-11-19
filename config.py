@@ -2,24 +2,27 @@ import os
 import sys
 from dotenv import load_dotenv
 
-# تحميل المتغيرات من ملف .env إذا وجد (للتطوير المحلي)
 load_dotenv()
 
-def get_env_variable(var_name):
-    value = os.getenv(var_name)
-    if not value:
-        print(f"❌ CRITICAL ERROR: Variable {var_name} is missing!")
-        sys.exit(1)
-    return value
+class Config:
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+    MEXC_API_KEY = os.getenv("MEXC_API_KEY")
+    MEXC_API_SECRET = os.getenv("MEXC_API_SECRET")
+    
+    # قائمة الاستبعاد (تجنب عملات الرافعة والعملات الخاملة)
+    EXCLUDED_PATTERNS = ['3L', '3S', '4L', '4S', '5L', '5S', 'DOWN', 'UP', 'BEAR', 'BULL']
 
-# التحقق الصارم عند البدء
-print("⚙️ Initializing Omega Configuration...")
-MEXC_API_KEY = get_env_variable("MEXC_API_KEY")
-MEXC_API_SECRET = get_env_variable("MEXC_API_SECRET")
-TELEGRAM_BOT_TOKEN = get_env_variable("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = get_env_variable("TELEGRAM_CHAT_ID")
+    @classmethod
+    def validate(cls):
+        missing_vars = []
+        if not cls.TELEGRAM_BOT_TOKEN: missing_vars.append("TELEGRAM_BOT_TOKEN")
+        if not cls.TELEGRAM_CHAT_ID: missing_vars.append("TELEGRAM_CHAT_ID")
+        if not cls.MEXC_API_KEY: missing_vars.append("MEXC_API_KEY")
+        if not cls.MEXC_API_SECRET: missing_vars.append("MEXC_API_SECRET")
+        
+        if missing_vars:
+            print(f"❌ خطأ قاتل: المتغيرات {', '.join(missing_vars)} مفقودة.")
+            sys.exit(1)
 
-# قائمة العملات المستهدفة (يمكن تعديلها هنا أو جعلها متغير بيئي مستقبلاً)
-TARGET_COINS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"] 
-
-print("✅ Configuration Loaded Successfully.")
+Config.validate()

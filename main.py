@@ -2,50 +2,33 @@ import asyncio
 import uvicorn
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-import config
-from strategy import OmegaStrategy
+
+from config import Config
 from mexc_handler import MEXCHandler
-from telegram_bot import TelegramBot
+from strategy import OmegaStrategy
+from telegram_bot import OmegaBot
 
-# 1. تهيئة الاستراتيجية
-strategy = OmegaStrategy()
+mexc_handler = MEXCHandler()
+omega_bot = OmegaBot(None)
+strategy = OmegaStrategy(mexc_handler, omega_bot)
 
-# 2. تهيئة بوت التليجرام
-bot = TelegramBot(strategy)
+mexc_handler.set_strategy(strategy)
+omega_bot.strategy = strategy
 
-# 3. تهيئة معالج MEXC
-mexc = MEXCHandler(strategy, bot.send_notification)
-
-# إدارة دورة حياة التطبيق (Lifespan)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- Startup ---
-    print("🚀 SYSTEM STARTUP: Omega Predator")
-    
-    # تهيئة وتشغيل بوت التليجرام في الخلفية
-    await bot.app.initialize()
-    await bot.app.start()
-    # استخدام Polling في مهمة منفصلة (Render لا يدعم Webhooks بسهولة دون عنوان IP ثابت أحياناً، الـ Polling أسهل هنا)
-    asyncio.create_task(bot.app.updater.start_polling())
-
-    # تشغيل مراقب الأسواق (WebSocket)
-    asyncio.create_task(mexc.start_websocket())
-    
+    # تشغيل البوت
+    await omega_bot.start()
+    # بدء التداول والاتصال
+    asyncio.create_task(mexc_handler.start_websocket())
+    print("🚀 Omega Predator System: ALL SYSTEMS GO.")
     yield
-    
-    # --- Shutdown ---
-    print("🛑 SYSTEM SHUTDOWN")
-    await bot.app.updater.stop()
-    await bot.app.stop()
-    await bot.app.shutdown()
 
-# تطبيق FastAPI لإبقاء Render سعيداً (Health Check)
 app = FastAPI(lifespan=lifespan)
 
 @app.get("/")
 async def health_check():
-    return {"status": "active", "system": "Omega Predator"}
+    return {"status": "alive", "trades": len(strategy.active_trades)}
 
 if __name__ == "__main__":
-    # يتم التشغيل عبر الأمر في Render، لكن هذا للاختبار المحلي
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

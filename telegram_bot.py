@@ -1,81 +1,49 @@
-import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-import config
-from strategy import OmegaStrategy
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from config import Config
+import logging
 
 logger = logging.getLogger("TelegramBot")
 
-class TelegramBot:
-    def __init__(self, strategy: OmegaStrategy):
-        self.token = config.TELEGRAM_BOT_TOKEN
-        self.allowed_chat_id = str(config.TELEGRAM_CHAT_ID)
-        self.strategy = strategy
-        self.app = ApplicationBuilder().token(self.token).build()
-
-    async def _check_auth(self, update: Update):
-        if str(update.effective_chat.id) != self.allowed_chat_id:
-            await update.message.reply_text("⛔ Access Denied.")
-            return False
-        return True
+class OmegaBot:
+    def __init__(self, strategy_instance):
+        self.strategy = strategy_instance
+        self.application = ApplicationBuilder().token(Config.TELEGRAM_BOT_TOKEN).build()
+        self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("status", self.status_command))
+        self.application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), self.handle_message))
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self._check_auth(update): return
-        
-        await update.message.reply_text(
-            "🦅 <b>OMEGA PREDATOR ONLINE</b>\n"
-            "سيدي مارك، تم تفعيل 'Omega Predator'.\n"
-            "⚠️ <b>مطلوب إجراء فوري:</b> يرجى تحديد مبلغ الشراء بالدولار (USD) لكل صفقة (أرسل الرقم فقط).",
-            parse_mode="HTML"
-        )
+        if str(update.effective_chat.id) != Config.TELEGRAM_CHAT_ID: return
+        await update.message.reply_text("أوميغا جاهز. أرسل مبلغ التداول بالدولار للبدء (مثال: 50).")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self._check_auth(update): return
+        if str(update.effective_chat.id) != Config.TELEGRAM_CHAT_ID: return
+        text = update.message.text.strip()
         
-        text = update.message.text
-        
-        # إذا كانت الاستراتيجية غير مفعلة، نتوقع رقم المبلغ
-        if not self.strategy.active:
+        if not self.strategy.is_running:
             try:
                 amount = float(text)
                 self.strategy.set_trade_amount(amount)
-                await update.message.reply_text(
-                    f"🫡 مفهوم. سيتم تنفيذ كل صفقة شراء بمبلغ <b>{amount}$</b>.\n"
-                    "🌪️ 'Omega Predator' الآن في وضع الصيد.",
-                    parse_mode="HTML"
-                )
+                await update.message.reply_text(f"تم. سيتم الدخول بـ {amount}$ لكل صفقة. المسح الشامل بدأ 🦅.")
             except ValueError:
-                await update.message.reply_text("❌ الرجاء إرسال رقم صحيح للمبلغ.")
+                await update.message.reply_text("رقم غير صحيح.")
         else:
-            await update.message.reply_text("🤖 النظام يعمل. استخدم /status للتقرير.")
+            await update.message.reply_text("النظام يعمل. استخدم /status.")
 
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not await self._check_auth(update): return
-        
-        status_msg = "📊 <b>STATUS REPORT</b>\n"
-        for symbol, state in self.strategy.trade_state.items():
-            status_msg += f"🔸 {symbol}: {state['status']}"
-            if state['status'] == 'HOLDING':
-                status_msg += f" (Peak: {state['peak_price']})"
-            status_msg += "\n"
-        
-        if not self.strategy.trade_state:
-            status_msg += "No active tracking yet."
+        if str(update.effective_chat.id) != Config.TELEGRAM_CHAT_ID: return
+        count = len(self.strategy.active_trades)
+        trades_list = "\n".join([f"- {s}: Peak {d['peak_price']}" for s, d in self.strategy.active_trades.items()])
+        await update.message.reply_text(f"📊 الحالة: نشط\nالصفقات المفتوحة: {count}\n{trades_list}")
 
-        await update.message.reply_text(status_msg, parse_mode="HTML")
-
-    async def send_notification(self, message):
-        """إرسال إشعار غير متزامن للسيد مارك"""
+    async def send_message(self, text):
         try:
-            await self.app.bot.send_message(chat_id=self.allowed_chat_id, text=message)
-        except Exception as e:
-            print(f"Failed to send telegram alert: {e}")
+            await self.application.bot.send_message(chat_id=Config.TELEGRAM_CHAT_ID, text=text)
+        except:
+            pass
 
-    def run(self):
-        # تسجيل المعالجات
-        self.app.add_handler(CommandHandler("start", self.start_command))
-        self.app.add_handler(CommandHandler("status", self.status_command))
-        self.app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), self.handle_message))
-        
-        # ملاحظة: سيتم تشغيل البوت داخل Main Loop باستخدام initialize و start/stop
-        return self.app
+    async def start(self):
+        await self.application.initialize()
+        await self.application.start()
+        await self.application.updater.start_polling()

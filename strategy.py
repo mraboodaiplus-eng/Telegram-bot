@@ -1,84 +1,113 @@
 import time
+import json
+import os
 from collections import deque
+import asyncio
 import logging
 
-# إعدادات السجل (للمتابعة فقط، يتم تعطيلها في المناطق الحرجة للسرعة)
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger("OmegaStrategy")
 
 class OmegaStrategy:
-    def __init__(self):
-        # الذاكرة السريعة لكل عملة: {symbol: deque([(timestamp, price), ...])}
-        self.price_history = {}
-        # حالة التداول: {symbol: {"status": "HUNTING" | "HOLDING", "buy_price": float, "peak_price": float}}
-        self.trade_state = {}
-        # مبلغ التداول المحدد من المدير العام
-        self.trade_amount_usd = None 
-        self.active = False
+    def __init__(self, mexc_handler, telegram_bot):
+        self.mexc = mexc_handler
+        self.bot = telegram_bot
+        self.price_windows = {}
+        
+        # تحميل الصفقات القديمة من الملف
+        self.active_trades = self.load_trades()
+        
+        self.trade_amount_usd = None
+        self.is_running = False
+        self.db_file = "trades.json"
+
+    def load_trades(self):
+        if os.path.exists("trades.json"):
+            try:
+                with open("trades.json", "r") as f:
+                    trades = json.load(f)
+                    logger.info(f"📂 تم استرجاع {len(trades)} صفقة مفتوحة من الذاكرة.")
+                    return trades
+            except:
+                return {}
+        return {}
+
+    def save_trades(self):
+        """حفظ الحالة فوراً"""
+        try:
+            with open("trades.json", "w") as f:
+                json.dump(self.active_trades, f)
+        except Exception as e:
+            logger.error(f"خطأ في حفظ البيانات: {e}")
 
     def set_trade_amount(self, amount):
         self.trade_amount_usd = float(amount)
-        self.active = True
-        logger.info(f"🚀 Strategy Activated. Trade Amount: ${self.trade_amount_usd}")
+        self.is_running = True
+        logger.info(f"🚀 Omega Predator Active. Amount: {amount}$")
 
-    def init_symbol(self, symbol):
-        if symbol not in self.price_history:
-            self.price_history[symbol] = deque(maxlen=1000) # حجم احتياطي
-            self.trade_state[symbol] = {
-                "status": "HUNTING",
-                "buy_price": 0.0,
-                "peak_price": 0.0
-            }
+    async def process_tick(self, symbol, price, timestamp_ms):
+        if not self.is_running: return
 
-    def process_tick(self, symbol, current_price, timestamp):
-        if not self.active or self.trade_amount_usd is None:
-            return None # البوت لم يبدأ بعد
+        price = float(price)
+        current_time = time.time()
 
-        self.init_symbol(symbol)
-        state = self.trade_state[symbol]
-        history = self.price_history[symbol]
-
-        # 1. تحديث النافذة الزمنية (20 ثانية)
-        # إضافة السعر الجديد
-        history.append((timestamp, current_price))
+        # تحديث النافذة الزمنية
+        if symbol not in self.price_windows:
+            self.price_windows[symbol] = deque()
         
-        # إزالة الأسعار القديمة جداً (أكثر من 20 ثانية)
-        while history and (timestamp - history[0][0] > 20000): # 20000 ms
-            history.popleft()
+        window = self.price_windows[symbol]
+        window.append((current_time, price))
+        while window and (current_time - window[0][0] > 20):
+            window.popleft()
 
-        if not history:
-            return None
+        # المنطق
+        if symbol in self.active_trades:
+            await self._check_sell_condition(symbol, price)
+        elif self.trade_amount_usd: # شرط أن يكون المبلغ محدداً
+            await self._check_buy_condition(symbol, price, window)
 
-        # --- منطق القناص (HUNTING) ---
-        if state["status"] == "HUNTING":
-            oldest_price = history[0][1]
-            # حساب نسبة الارتفاع
-            growth_ratio = (current_price / oldest_price) - 1
+    async def _check_buy_condition(self, symbol, current_price, window):
+        if len(window) < 2: return
+        oldest_price = window[0][1]
+        increase = (current_price / oldest_price) - 1
 
-            # الشرط: >= 5% (0.05)
-            if growth_ratio >= 0.05:
-                # ⚡ تنفيذ أعمى - قرار الشراء
-                # نغير الحالة فوراً لمنع تكرار الشراء
-                state["status"] = "HOLDING"
-                state["buy_price"] = current_price
-                state["peak_price"] = current_price
-                return "BUY"
-
-        # --- منطق الظل اللاصق (HOLDING) ---
-        elif state["status"] == "HOLDING":
-            # تحديث سعر الذروة
-            if current_price > state["peak_price"]:
-                state["peak_price"] = current_price
+        if increase >= 0.05:
+            # تحقق إضافي بسيط: لا تشتري إذا كنت قد بعت للتو (اختياري)
+            logger.info(f"⚡ فرصة شراء: {symbol} ارتفع {increase:.2%}")
             
-            # حساب نسبة التراجع
-            drawdown = 1 - (current_price / state["peak_price"])
+            success = await self.mexc.place_order(symbol, "BUY", quote_qty=self.trade_amount_usd)
+            
+            if success:
+                # تقدير الكمية المشتراة (سنستخدمها للبيع)
+                estimated_qty = self.trade_amount_usd / current_price
+                
+                self.active_trades[symbol] = {
+                    'buy_price': current_price,
+                    'peak_price': current_price,
+                    'quantity': estimated_qty * 0.998 # خصم عمولة تقريبية 0.2% لتجنب أخطاء الرصيد
+                }
+                self.save_trades() # حفظ فوري
+                await self.bot.send_message(f"🟢 *BUY* {symbol}\nPrice: {current_price}\n🚀 Pump: {increase:.2%}")
 
-            # الشرط: >= 3% (0.03)
-            if drawdown >= 0.03:
-                # ⚡ تنفيذ أعمى - قرار البيع
-                state["status"] = "HUNTING" # العودة للصيد
-                state["buy_price"] = 0.0
-                state["peak_price"] = 0.0
-                return "SELL"
+    async def _check_sell_condition(self, symbol, current_price):
+        trade = self.active_trades[symbol]
+        
+        if current_price > trade['peak_price']:
+            trade['peak_price'] = current_price
+            self.save_trades() # تحديث القمة في الملف
+        
+        drawdown = 1 - (current_price / trade['peak_price'])
 
-        return None
+        if drawdown >= 0.03:
+            logger.info(f"💀 إشارة بيع: {symbol} نزل {drawdown:.2%}")
+            
+            success = await self.mexc.place_order(symbol, "SELL", quantity=trade['quantity'])
+            
+            if success:
+                pnl = (current_price - trade['buy_price']) / trade['buy_price']
+                icon = "💰" if pnl > 0 else "🔻"
+                
+                del self.active_trades[symbol]
+                self.save_trades() # حذف من الملف
+                
+                await self.bot.send_message(f"{icon} *SELL* {symbol}\nExit: {current_price}\nPNL: {pnl:.2%}")
