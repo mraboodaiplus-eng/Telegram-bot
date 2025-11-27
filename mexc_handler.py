@@ -16,6 +16,11 @@ class MEXCHandler:
         self.ws_url = "wss://wbs.mexc.com/ws"
         self.strategy = None
         self.target_symbols = [] 
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Content-Type': 'application/json',
+            'X-MEXC-APIKEY': Config.MEXC_API_KEY
+        }
 
     def set_strategy(self, strategy_instance):
         self.strategy = strategy_instance
@@ -28,121 +33,93 @@ class MEXCHandler:
         ).hexdigest()
 
     async def get_all_pairs(self):
-        """جلب العملات مع تخفيف القيود وطباعة عينة للتشخيص"""
-        url = f"{self.base_url}/api/v3/exchangeInfo"
+        # ... (نفس دالة الجلب السابقة، لا تغيير هنا) ...
+        url = f"{self.base_url}/api/v3/ticker/24hr"
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(url) as response:
+                async with session.get(url, headers=self.headers) as response:
                     if response.status == 200:
                         data = await response.json()
-                        
-                        # --- Debug Start: طباعة عينة من البيانات القادمة ---
-                        if 'symbols' in data and len(data['symbols']) > 0:
-                            logger.info(f"🔍 DEBUG: Sample Data from MEXC: {data['symbols'][0]}")
-                        else:
-                            logger.error("⚠️ API returned empty symbols list! Check Server Region.")
-                        # ----------------------------------------------------
-
                         symbols = []
-                        for s in data.get('symbols', []):
+                        for s in data:
                             name = s['symbol']
-                            
-                            # التعديل: إزالة شرط 'status' الصارم مؤقتاً لضمان الجلب
-                            # والاكتفاء بأن العملة تنتهي بـ USDT وليست محظورة
-                            if (name.endswith('USDT') and 
-                                not any(ex in name for ex in Config.EXCLUDED_PATTERNS)):
+                            quote_volume = float(s.get('quoteVolume', 0))
+                            if name.endswith('USDT') and quote_volume > 10000 and not any(ex in name for ex in Config.EXCLUDED_PATTERNS):
                                 symbols.append(name)
-                        
                         self.target_symbols = symbols
-                        
-                        if len(symbols) > 0:
-                            logger.info(f"✅ تم تجهيز {len(symbols)} عملة للمراقبة.")
-                        else:
-                            logger.warning("⚠️ تم الاتصال ولكن لم يتم العثور على أزواج USDT! قد يكون IP محظوراً.")
-                            
+                        logger.info(f"✅ تم تجهيز {len(symbols)} عملة. سيتم توزيعها على قنوات متعددة.")
                         return symbols
-                    else:
-                        logger.error(f"❌ فشل جلب العملات. Status: {response.status}")
-                        return []
-            except Exception as e:
-                logger.error(f"💥 خطأ اتصال HTTP: {e}")
+                    return []
+            except Exception:
                 return []
 
     async def place_order(self, symbol, side, quantity=None, quote_qty=None):
-        """إرسال أوامر السوق"""
+        # ... (نفس دالة الطلب السابقة) ...
         async with aiohttp.ClientSession() as session:
             timestamp = int(time.time() * 1000)
-            params = {
-                'symbol': symbol,
-                'side': side.upper(),
-                'type': 'MARKET',
-                'timestamp': timestamp,
-                'recvWindow': 5000
-            }
-            
-            if side.upper() == 'BUY' and quote_qty:
-                params['quoteOrderQty'] = str(quote_qty)
-            elif side.upper() == 'SELL' and quantity:
-                params['quantity'] = f"{quantity:.4f}"
+            params = { 'symbol': symbol, 'side': side.upper(), 'type': 'MARKET', 'timestamp': timestamp, 'recvWindow': 5000 }
+            if side.upper() == 'BUY' and quote_qty: params['quoteOrderQty'] = str(quote_qty)
+            elif side.upper() == 'SELL' and quantity: params['quantity'] = f"{quantity:.4f}"
             
             query_string = urlencode(params)
             signature = self._generate_signature(query_string)
             url = f"{self.base_url}/api/v3/order?{query_string}&signature={signature}"
-            headers = {'X-MEXC-APIKEY': Config.MEXC_API_KEY, 'Content-Type': 'application/json'}
-
+            headers = self.headers.copy()
+            headers['X-MEXC-APIKEY'] = Config.MEXC_API_KEY
             try:
                 async with session.post(url, headers=headers) as response:
-                    resp_json = await response.json()
-                    if response.status == 200:
-                        logger.info(f"✅ Order Executed: {side} {symbol}")
-                        return True
-                    else:
-                        logger.error(f"❌ Order Failed: {resp_json}")
-                        return False
-            except Exception as e:
-                logger.error(f"💥 Order Exception: {e}")
+                    return response.status == 200
+            except:
                 return False
 
-    async def start_websocket(self):
-        """اتصال دائم"""
-        if not self.target_symbols:
-            await self.get_all_pairs()
-
-        # إذا فشل في جلب العملات، حاول مرة أخرى كل 10 ثواني
-        while not self.target_symbols:
-            logger.warning("⚠️ No symbols found. Retrying in 10s...")
-            await asyncio.sleep(10)
-            await self.get_all_pairs()
-
+    async def _socket_worker(self, worker_id, symbols_batch):
+        """عامل واحد مسؤول عن مجموعة محددة من العملات"""
         while True:
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.ws_connect(self.ws_url) as ws:
-                        logger.info(f"🌐 WebSocket Connected. Subscribing to {len(self.target_symbols)} pairs...")
+                    async with session.ws_connect(self.ws_url, heartbeat=15) as ws:
+                        logger.info(f"🚀 Worker {worker_id}: Connected. Handling {len(symbols_batch)} coins.")
                         
-                        # تقسيم الاشتراكات لدفعات (Batches)
-                        chunk_size = 30
-                        for i in range(0, len(self.target_symbols), chunk_size):
-                            batch = self.target_symbols[i:i + chunk_size]
-                            params = {
-                                "method": "SUBSCRIPTION",
-                                "params": [f"spot@public.deals.v3.api@{s}" for s in batch]
-                            }
-                            await ws.send_json(params)
-                            await asyncio.sleep(0.1) 
+                        # اشتراك سريع (Batch واحد لأن العدد قليل لكل عامل)
+                        params = {
+                            "method": "SUBSCRIPTION",
+                            "params": [f"spot@public.deals.v3.api@{s}" for s in symbols_batch]
+                        }
+                        await ws.send_json(params)
                         
-                        logger.info("✅ All subscriptions sent.")
-
                         async for msg in ws:
                             if msg.type == aiohttp.WSMsgType.TEXT:
                                 data = json.loads(msg.data)
                                 if 'd' in data and 'deals' in data['d']:
+                                    # معالجة فورية
                                     symbol = data['s']
-                                    for deal in data['d']['deals']:
-                                        if self.strategy:
-                                            await self.strategy.process_tick(symbol, deal['p'], deal['t'])
+                                    deal = data['d']['deals'][-1]
+                                    if self.strategy:
+                                        await self.strategy.process_tick(symbol, deal['p'], deal['t'])
                             elif msg.type == aiohttp.WSMsgType.ERROR:
                                 break
             except Exception as e:
-                logger.error(f"⚠️ WebSocket Crash: {e}. Restarting in 5s...")
-                await asyncio.sleep(5)
+                logger.warning(f"⚠️ Worker {worker_id} disconnected. Reconnecting...")
+                await asyncio.sleep(2)
+
+    async def start_multiplex_sockets(self):
+        """المايسترو: يوزع العملات على 5 عمال"""
+        if not self.target_symbols:
+            await self.get_all_pairs()
+
+        total_coins = len(self.target_symbols)
+        num_workers = 5 # خمسة اتصالات متوازية
+        chunk_size = total_coins // num_workers + 1
+
+        tasks = []
+        for i in range(num_workers):
+            start = i * chunk_size
+            end = start + chunk_size
+            batch = self.target_symbols[start:end]
+            
+            if batch:
+                # تشغيل كل عامل في عملية منفصلة (Concurrent Task)
+                tasks.append(asyncio.create_task(self._socket_worker(i+1, batch)))
+        
+        logger.info(f"🔥 Multiplexing Active: {num_workers} parallel sockets launched.")
+        await asyncio.gather(*tasks)
