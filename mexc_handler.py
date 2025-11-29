@@ -21,6 +21,7 @@ class MEXCHandler:
             'Content-Type': 'application/json',
             'X-MEXC-APIKEY': Config.MEXC_API_KEY
         }
+        self.last_msg_time = 0
 
     def set_strategy(self, strategy_instance):
         self.strategy = strategy_instance
@@ -33,7 +34,6 @@ class MEXCHandler:
         ).hexdigest()
 
     async def get_all_pairs(self):
-        """جلب العملات النشطة فقط"""
         url = f"{self.base_url}/api/v3/ticker/24hr"
         async with aiohttp.ClientSession() as session:
             try:
@@ -43,20 +43,18 @@ class MEXCHandler:
                         symbols = []
                         for s in data:
                             name = s['symbol']
-                            quote_volume = float(s.get('quoteVolume', 0))
-                            is_usdt = name.endswith('USDT')
-                            is_excluded = any(ex in name for ex in ['3L', '3S', '4L', '4S', '5L', '5S']) # استبعاد سريع
-                            
-                            # نركز على العملات اللي فيها حركة (فوق 50 ألف دولار سيولة)
-                            if is_usdt and not is_excluded and quote_volume > 50000:
-                                symbols.append(name)
+                            quote_vol = float(s.get('quoteVolume', 0))
+                            if name.endswith('USDT') and quote_vol > 50000: # رفعنا الحد قليلاً لضمان الجودة
+                                is_excluded = any(ex in name for ex in Config.EXCLUDED_PATTERNS)
+                                if not is_excluded:
+                                    symbols.append(name)
                         
                         self.target_symbols = symbols
-                        logger.info(f"✅ تم تجهيز {len(symbols)} عملة (تمت الفلترة).")
+                        logger.info(f"✅ تم تحميل {len(symbols)} عملة قوية.")
                         return symbols
                     return []
             except Exception as e:
-                logger.error(f"💥 خطأ اتصال: {e}")
+                logger.error(f"Error fetching pairs: {e}")
                 return []
 
     async def place_order(self, symbol, side, quantity=None, quote_qty=None):
@@ -67,7 +65,7 @@ class MEXCHandler:
                 'side': side.upper(),
                 'type': 'MARKET',
                 'timestamp': timestamp,
-                'recvWindow': 5000
+                'recvWindow': 10000 # زيادة النافذة لتجنب رفض الطلب
             }
             if side.upper() == 'BUY' and quote_qty:
                 params['quoteOrderQty'] = str(quote_qty)
@@ -84,13 +82,13 @@ class MEXCHandler:
                 async with session.post(url, headers=headers) as response:
                     resp_json = await response.json()
                     if response.status == 200:
-                        logger.info(f"✅ Order Executed: {side} {symbol}")
+                        logger.info(f"✅ ORDER SUCCESS: {side} {symbol}")
                         return True
                     else:
-                        logger.error(f"❌ Order Failed: {resp_json}")
+                        logger.error(f"❌ ORDER FAILED: {resp_json}")
                         return False
             except Exception as e:
-                logger.error(f"💥 Order Exception: {e}")
+                logger.error(f"Order Exception: {e}")
                 return False
 
     async def start_websocket(self):
@@ -99,15 +97,13 @@ class MEXCHandler:
 
         while True:
             try:
-                # 🔥 الإضافة السحرية: heartbeat=15
-                # هذا يمنع المنصة من قطع الاتصال كل 30 ثانية
                 async with aiohttp.ClientSession() as session:
-                    async with session.ws_connect(self.ws_url, heartbeat=15) as ws:
-                        logger.info("🌐 WebSocket Connected (Stable Mode).")
+                    # 🔥 تفعيل Heartbeat (نبض القلب) لمنع الانقطاع
+                    async with session.ws_connect(self.ws_url, heartbeat=15, autoping=True) as ws:
+                        logger.info("🌐 WebSocket Connected (Heartbeat Active).")
                         
-                        # نرسل الاشتراكات دفعة واحدة (MEXC تتحمل حتى 3000 في اتصال واحد عادة)
-                        # لكن نقسمها لأمان أكثر
-                        chunk_size = 30
+                        # الاشتراك بدفعات
+                        chunk_size = 20
                         for i in range(0, len(self.target_symbols), chunk_size):
                             batch = self.target_symbols[i:i + chunk_size]
                             params = {
@@ -115,27 +111,35 @@ class MEXCHandler:
                                 "params": [f"spot@public.deals.v3.api@{s}" for s in batch]
                             }
                             await ws.send_json(params)
-                            await asyncio.sleep(0.05) # فاصل زمني بسيط جداً
+                            await asyncio.sleep(0.1)
                         
-                        logger.info("✅ الاشتراكات مفعلة - وضع الثبات.")
+                        logger.info("✅ Subscriptions Sent. Listening...")
+                        self.last_msg_time = time.time()
 
                         async for msg in ws:
                             if msg.type == aiohttp.WSMsgType.TEXT:
                                 data = json.loads(msg.data)
+                                
+                                # فحص الاستجابة
                                 if 'd' in data and 'deals' in data['d']:
                                     symbol = data['s']
                                     deal = data['d']['deals'][-1]
-                                    # إرسال البيانات للاستراتيجية
+                                    
+                                    # طباعة رسالة "أنا حي" كل 10 ثواني فقط لنتأكد من تدفق البيانات
+                                    if time.time() - self.last_msg_time > 10:
+                                        logger.info(f"💓 نبض السوق: استقبلت بيانات {symbol} بسعر {deal['p']}")
+                                        self.last_msg_time = time.time()
+
                                     if self.strategy:
                                         await self.strategy.process_tick(symbol, deal['p'], deal['t'])
-                            
+                                        
+                                elif 'msg' in data and data['msg'] == 'PONG':
+                                    logger.debug("Received PONG")
+
                             elif msg.type == aiohttp.WSMsgType.ERROR:
-                                logger.error("WebSocket Error Frame received.")
-                                break
-                            elif msg.type == aiohttp.WSMsgType.CLOSED:
-                                logger.warning("WebSocket Closed by Server.")
+                                logger.error("WebSocket Error received.")
                                 break
                                 
             except Exception as e:
-                logger.error(f"⚠️ Connection Drop: {e}. Reconnecting in 3s...")
-                await asyncio.sleep(3)
+                logger.error(f"⚠️ Connection Lost: {e}. Reconnecting in 5s...")
+                await asyncio.sleep(5)
