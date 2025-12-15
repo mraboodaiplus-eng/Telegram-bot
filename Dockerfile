@@ -1,5 +1,5 @@
-# المرحلة 1: البناء (The Builder) - نستخدم صورة رسمية لـ Rust
-FROM rust:1.75-slim-bullseye as builder
+# ✅ التحديث: نستخدم نسخة 1.84 (أحدث وأقوى) لحل مشكلة التوافق
+FROM rust:1.84-slim-bookworm as builder
 
 # تحسينات لتسريع البناء
 WORKDIR /app
@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y pkg-config libssl-dev cmake && rm -rf /
 # بناء المشروع بأقصى تحسينات (Release Mode)
 RUN cargo build --release
 
-# المرحلة 2: التشغيل (The Runner) - صورة خفيفة جداً وسريعة
-FROM debian:bullseye-slim
+# المرحلة 2: التشغيل (The Runner) - نستخدم Bookworm لتوافق أفضل
+FROM debian:bookworm-slim
 
 # تثبيت شهادات الأمان و SSL لضمان سرعة الاتصال المشفر
 RUN apt-get update && apt-get install -y ca-certificates libssl-dev && rm -rf /var/lib/apt/lists/*
