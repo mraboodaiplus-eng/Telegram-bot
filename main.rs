@@ -14,7 +14,6 @@ use sha2::Sha256;
 use chrono::{DateTime, Utc};
 use warp::Filter;
 
-// 🚀 JEMALLOC: تفعيل الذاكرة السريعة
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
@@ -105,8 +104,7 @@ fn sign_query(query: &str, secret: &str) -> String {
 async fn start_health_server() {
     let port_str = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let port: u16 = port_str.parse().unwrap_or(8080);
-    // رسالة تطمئنك أن السيرفر يعمل
-    let route = warp::any().map(|| "🚀 OMEGA ROYAL IS ALIVE (HFT MODE)");
+    let route = warp::any().map(|| "🚀 OMEGA ROYAL IS ALIVE (DEBUG MODE)");
     println!("🌍 Health Server running on port {}", port);
     warp::serve(route).run(([0, 0, 0, 0], port)).await;
 }
@@ -130,7 +128,6 @@ impl AppState {
         if !self.is_running { return None; }
         let now = get_timestamp_secs();
 
-        // 1. Sell Logic
         if let Some(trade) = self.active_trades.get_mut(symbol) {
             if price > trade.peak_price { trade.peak_price = price; }
             let drawdown = (trade.peak_price - price) / trade.peak_price;
@@ -144,7 +141,6 @@ impl AppState {
             return None;
         }
 
-        // 2. Buy Logic
         let window = self.price_windows.entry(symbol.to_string()).or_insert_with(|| VecDeque::with_capacity(50));
         window.push_back((now, price));
         while let Some(first) = window.front() {
@@ -229,7 +225,7 @@ async fn process_user_command(text: &str, chat_id: &str, state: &Arc<Mutex<AppSt
 
     match text {
         "/start" => {
-            let msg = "👑 **OMEGA ROYAL: HFT EDITION**\n\n🟢 `/run`\n🔴 `/stop`\n📊 `/status`\n📑 `/report`";
+            let msg = "👑 **OMEGA ROYAL: DEBUG EDITION**\n\nSystem is scanning pairs...";
             drop(lock);
             send_telegram_direct(client, &config_clone, msg).await;
         },
@@ -342,15 +338,13 @@ async fn main() {
         .build()
         .expect("Client build failed");
 
-    // نستخدم unwrap_or_default لتجنب الانهيار في حالة عدم وجود المتغيرات (رغم أنها ضرورية)
     let token = env::var("TELEGRAM_BOT_TOKEN").unwrap_or_default();
     let chat_id = env::var("TELEGRAM_CHAT_ID").unwrap_or_default();
     let api_key = env::var("MEXC_API_KEY").unwrap_or_default();
     let secret = env::var("MEXC_API_SECRET").unwrap_or_default();
 
-    println!("👑 OMEGA ROYAL ENGINE: STARTING...");
+    println!("👑 OMEGA ROYAL ENGINE: STARTING (DEBUG MODE)...");
     
-    // 🔥 تشغيل السيرفر بشكل مستقل تماماً لضمان بقاء البوت حياً
     tokio::spawn(async move { start_health_server().await; });
 
     let config = Config { api_key, api_secret: secret, bot_token: token, chat_id, trade_amount: 0.0 };
@@ -365,31 +359,50 @@ async fn main() {
     let client_executor = client.clone();
     tokio::spawn(async move { trade_executor(rx, state_executor, client_executor).await; });
 
-    // محاولة جلب العملات
-    println!("🔄 Fetching pairs from MEXC...");
+    // 🔍🔍🔍 منطقة التحقيق الجنائي 🔍🔍🔍
+    println!("🔄 Fetching pairs from MEXC (VERBOSE MODE)...");
+    
     let resp = client.get(format!("{}/api/v3/exchangeInfo", MEXC_BASE_URL)).send().await;
+
     let mut symbols: Vec<String> = Vec::new();
     
-    if let Ok(r) = resp {
-        if let Ok(json) = r.json::<serde_json::Value>().await {
-             if let Some(list) = json["symbols"].as_array() {
-                 for s in list {
-                     let name = s["symbol"].as_str().unwrap_or_default();
-                     // تخفيف شروط الفلترة قليلاً لضمان التقاط عملات
-                     if name.ends_with("USDT") && s["status"].as_str().unwrap_or("") == "ENABLED" {
-                         symbols.push(name.to_string());
+    match resp {
+        Ok(response) => {
+            // طباعة كود الحالة (مثلاً 200 تعني نجاح، 403 تعني حظر، 451 تعني منطقة محظورة)
+            println!("📡 Response HTTP Code: {}", response.status());
+
+            // قراءة النص الخام قبل تحويله لـ JSON
+            let body_text = response.text().await.unwrap_or_else(|_| "Failed to read body".to_string());
+            
+            // طباعة أول 500 حرف من الرد لنعرف السبب
+            println!("📄 RAW RESPONSE FROM MEXC:\n--------------------------------------------------\n{}\n--------------------------------------------------", 
+                &body_text.chars().take(500).collect::<String>());
+
+            // محاولة التحليل بعد القراءة
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body_text) {
+                 if let Some(list) = json["symbols"].as_array() {
+                     for s in list {
+                         let name = s["symbol"].as_str().unwrap_or_default();
+                         // بدون أي فلترة تقريباً، فقط USDT
+                         if name.ends_with("USDT") {
+                             symbols.push(name.to_string());
+                         }
                      }
+                 } else {
+                     println!("❌ 'symbols' array not found in JSON!");
                  }
-             }
+            } else {
+                 println!("❌ Failed to parse JSON! The response is likely HTML error page.");
+            }
+        },
+        Err(e) => {
+            println!("💥 CRITICAL NETWORK ERROR: {}", e);
         }
     }
     
     println!("✅ LOADED {} PAIRS.", symbols.len());
 
-    // إذا لم يجد عملات، لا تخرج من البرنامج!
-    if symbols.is_empty() {
-        println!("⚠️ WARNING: No pairs loaded! Check API or Filters. Bot is staying alive for debugging.");
-    } else {
+    if !symbols.is_empty() {
         let mut handles = vec![];
         for chunk in symbols.chunks(SYMBOLS_PER_SOCKET) {
             let chunk_vec = chunk.to_vec();
@@ -398,10 +411,9 @@ async fn main() {
             handles.push(tokio::spawn(async move { ws_handler(chunk_vec, state_clone, tx_clone).await; }));
             sleep(Duration::from_millis(20)).await;
         }
-        // لا ننتظر هنا، بل نترك المهام تعمل في الخلفية
+    } else {
+        println!("⚠️ SYSTEM IDLE: No symbols to watch. Check the Raw Response above.");
     }
 
-    // 🛑🔥 الحركة السحرية: تجميد الدالة الرئيسية للأبد لمنع الخروج 🔥🛑
-    // هذا السطر يخبر البرنامج: "انتظر هنا إلى يوم القيامة"
     std::future::pending::<()>().await;
 }
