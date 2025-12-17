@@ -14,6 +14,7 @@ use sha2::Sha256;
 use chrono::{DateTime, Utc};
 use warp::Filter;
 
+// 🚀 تفعيل الذاكرة السريعة
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
@@ -104,8 +105,8 @@ fn sign_query(query: &str, secret: &str) -> String {
 async fn start_health_server() {
     let port_str = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let port: u16 = port_str.parse().unwrap_or(8080);
-    let route = warp::any().map(|| "🚀 OMEGA ROYAL IS ALIVE (DEBUG MODE)");
-    println!("🌍 Health Server running on port {}", port);
+    let route = warp::any().map(|| "⚡ OMEGA ROYAL ONLINE (SECURE MODE)");
+    println!("🌍 Health Server listening on {}", port);
     warp::serve(route).run(([0, 0, 0, 0], port)).await;
 }
 
@@ -128,6 +129,7 @@ impl AppState {
         if !self.is_running { return None; }
         let now = get_timestamp_secs();
 
+        // 1. Sell Logic
         if let Some(trade) = self.active_trades.get_mut(symbol) {
             if price > trade.peak_price { trade.peak_price = price; }
             let drawdown = (trade.peak_price - price) / trade.peak_price;
@@ -141,6 +143,7 @@ impl AppState {
             return None;
         }
 
+        // 2. Buy Logic
         let window = self.price_windows.entry(symbol.to_string()).or_insert_with(|| VecDeque::with_capacity(50));
         window.push_back((now, price));
         while let Some(first) = window.front() {
@@ -212,7 +215,7 @@ async fn process_user_command(text: &str, chat_id: &str, state: &Arc<Mutex<AppSt
             lock.config.trade_amount = amount;
             lock.waiting_for_amount = false;
             lock.is_running = true;
-            let msg = format!("✅ **HFT ENGAGED.**\n💰 Alloc: **{:.2} USDT**", amount);
+            let msg = format!("✅ **PROTOCOL STARTED.**\n💰 Allocation: **{:.2} USDT**\n🛡️ Mode: **SAFE & SECURE**", amount);
             drop(lock);
             send_telegram_direct(client, &config_clone, &msg).await;
             return;
@@ -225,23 +228,23 @@ async fn process_user_command(text: &str, chat_id: &str, state: &Arc<Mutex<AppSt
 
     match text {
         "/start" => {
-            let msg = "👑 **OMEGA ROYAL: DEBUG EDITION**\n\nSystem is scanning pairs...";
+            let msg = "👑 **OMEGA ROYAL**\n\n🟢 `/run` - Start\n🔴 `/stop` - Stop\n📊 `/status` - Status\n📑 `/report` - Report";
             drop(lock);
             send_telegram_direct(client, &config_clone, msg).await;
         },
         "/run" => {
             lock.waiting_for_amount = true;
             drop(lock);
-            send_telegram_direct(client, &config_clone, "💳 Amount (USDT):").await;
+            send_telegram_direct(client, &config_clone, "💳 Enter Trade Amount (USDT):").await;
         },
         "/stop" => {
             lock.is_running = false;
             drop(lock);
-            send_telegram_direct(client, &config_clone, "🛑 Halted.").await;
+            send_telegram_direct(client, &config_clone, "🛑 Engine Stopped.").await;
         },
         "/status" => {
             let count = lock.active_trades.len();
-            let mut report = format!("📊 **STATUS**\nState: {}\nActive: {}\n", 
+            let mut report = format!("📊 **STATUS**\nState: {}\nActive Trades: {}\n", 
                 if lock.is_running { "ON" } else { "OFF" }, count);
             for t in lock.active_trades.values() {
                 report.push_str(&format!("▫️ {} | {:.4}\n", t.symbol, t.buy_price));
@@ -252,7 +255,7 @@ async fn process_user_command(text: &str, chat_id: &str, state: &Arc<Mutex<AppSt
         "/report" => {
             let mut total_pnl = 0.0;
             for t in &lock.closed_trades { total_pnl += t.profit_usdt; }
-            let msg = format!("📑 **REPORT**\n💰 Net PNL: {:.2} USDT", total_pnl);
+            let msg = format!("📑 **REPORT**\n💰 Total Profit: {:.2} USDT", total_pnl);
             drop(lock);
             send_telegram_direct(client, &config_clone, &msg).await;
         },
@@ -281,7 +284,7 @@ async fn trade_executor(mut rx: mpsc::Receiver<TradeAction>, state: Arc<Mutex<Ap
                     let mut lock = state.lock().await;
                     lock.active_trades.insert(symbol.clone(), trade);
                     drop(lock);
-                    let msg = format!("🟢 **BUY** {} @ {}", symbol, price);
+                    let msg = format!("🟢 **BUY EXECUTED**\n💎 {} @ {}", symbol, price);
                     send_telegram_direct(&client, &config, &msg).await;
                 }
             },
@@ -294,7 +297,7 @@ async fn trade_executor(mut rx: mpsc::Receiver<TradeAction>, state: Arc<Mutex<Ap
                         profit_usdt: pnl, close_time: get_current_time_str() 
                     });
                     drop(lock);
-                    let msg = format!("💰 **SELL** {} | PNL: {:.2}", symbol, pnl);
+                    let msg = format!("💰 **SELL EXECUTED**\n💎 {} | Profit: {:.2} USDT", symbol, pnl);
                     send_telegram_direct(&client, &config, &msg).await;
                 }
             }
@@ -343,13 +346,14 @@ async fn main() {
     let api_key = env::var("MEXC_API_KEY").unwrap_or_default();
     let secret = env::var("MEXC_API_SECRET").unwrap_or_default();
 
-    println!("👑 OMEGA ROYAL ENGINE: STARTING (DEBUG MODE)...");
+    println!("👑 OMEGA ROYAL ENGINE: INITIALIZING...");
     
+    // تشغيل السيرفر
     tokio::spawn(async move { start_health_server().await; });
 
     let config = Config { api_key, api_secret: secret, bot_token: token, chat_id, trade_amount: 0.0 };
     let state = Arc::new(Mutex::new(AppState::new(config)));
-    let (tx, rx) = mpsc::channel::<TradeAction>(500);
+    let (tx, rx) = mpsc::channel::<TradeAction>(1000);
 
     let state_telegram = state.clone();
     let client_telegram = client.clone();
@@ -359,44 +363,37 @@ async fn main() {
     let client_executor = client.clone();
     tokio::spawn(async move { trade_executor(rx, state_executor, client_executor).await; });
 
-    // 🔍🔍🔍 منطقة التحقيق الجنائي 🔍🔍🔍
-    println!("🔄 Fetching pairs from MEXC (VERBOSE MODE)...");
-    
+    println!("🔄 Fetching pairs...");
     let resp = client.get(format!("{}/api/v3/exchangeInfo", MEXC_BASE_URL)).send().await;
-
     let mut symbols: Vec<String> = Vec::new();
     
-    match resp {
-        Ok(response) => {
-            // طباعة كود الحالة (مثلاً 200 تعني نجاح، 403 تعني حظر، 451 تعني منطقة محظورة)
-            println!("📡 Response HTTP Code: {}", response.status());
+    if let Ok(r) = resp {
+        if let Ok(json) = r.json::<serde_json::Value>().await {
+             if let Some(list) = json["symbols"].as_array() {
+                 for s in list {
+                     let name = s["symbol"].as_str().unwrap_or_default();
+                     let status = s["status"].as_str().unwrap_or("0");
+                     let is_spot = s["isSpotTradingAllowed"].as_bool().unwrap_or(false);
+                     
+                     // التحقق من الصلاحيات (هل هي SPOT فعلاً؟)
+                     let has_spot_permission = s["permissions"].as_array()
+                         .map(|p| p.iter().any(|x| x.as_str() == Some("SPOT")))
+                         .unwrap_or(false);
 
-            // قراءة النص الخام قبل تحويله لـ JSON
-            let body_text = response.text().await.unwrap_or_else(|_| "Failed to read body".to_string());
-            
-            // طباعة أول 500 حرف من الرد لنعرف السبب
-            println!("📄 RAW RESPONSE FROM MEXC:\n--------------------------------------------------\n{}\n--------------------------------------------------", 
-                &body_text.chars().take(500).collect::<String>());
-
-            // محاولة التحليل بعد القراءة
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body_text) {
-                 if let Some(list) = json["symbols"].as_array() {
-                     for s in list {
-                         let name = s["symbol"].as_str().unwrap_or_default();
-                         // بدون أي فلترة تقريباً، فقط USDT
-                         if name.ends_with("USDT") {
-                             symbols.push(name.to_string());
-                         }
+                     // 🛡️ الفلترة الصارمة والآمنة 🛡️
+                     // 1. USDT
+                     // 2. حالة نشطة (ENABLED أو 1)
+                     // 3. التداول مسموح (isSpotTradingAllowed = true)
+                     // 4. يملك صلاحية SPOT
+                     if name.ends_with("USDT") 
+                        && (status == "1" || status == "ENABLED")
+                        && is_spot
+                        && has_spot_permission 
+                     {
+                         symbols.push(name.to_string());
                      }
-                 } else {
-                     println!("❌ 'symbols' array not found in JSON!");
                  }
-            } else {
-                 println!("❌ Failed to parse JSON! The response is likely HTML error page.");
-            }
-        },
-        Err(e) => {
-            println!("💥 CRITICAL NETWORK ERROR: {}", e);
+             }
         }
     }
     
@@ -412,8 +409,9 @@ async fn main() {
             sleep(Duration::from_millis(20)).await;
         }
     } else {
-        println!("⚠️ SYSTEM IDLE: No symbols to watch. Check the Raw Response above.");
+        println!("⚠️ NO PAIRS LOADED (Check API). Bot staying alive.");
     }
 
+    // الحركة السحرية: البقاء حياً للأبد
     std::future::pending::<()>().await;
 }
