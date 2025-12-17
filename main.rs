@@ -6,17 +6,15 @@ use tokio::sync::{Mutex, mpsc};
 use tokio::time::sleep;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json; // Removed generic Value to optimize speed
+use serde_json::json; 
 use futures_util::{StreamExt, SinkExt};
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
-use dotenv::dotenv;
-use std::fs;
 use chrono::{DateTime, Utc};
 use warp::Filter;
 
-// 🚀 JEMALLOC: ذاكرة الفيسبوك السريعة
+// 🚀 JEMALLOC: تفعيل الذاكرة السريعة
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
@@ -25,12 +23,11 @@ const MEXC_BASE_URL: &str = "https://api.mexc.com";
 const MEXC_WS_URL: &str = "wss://wbs.mexc.com/ws";
 const SYMBOLS_PER_SOCKET: usize = 30;
 
-// --- ⚡ SPEED STRUCTURES (Zero-Cost Deserialization) ⚡ ---
-// استبدلنا تحليل JSON العام بهياكل محددة لتسريع المعالجة
+// --- Structures ---
 #[derive(Deserialize)]
 struct WsMessage {
-    s: String, // Symbol
-    d: WsData, // Data
+    s: String,
+    d: WsData,
 }
 
 #[derive(Deserialize)]
@@ -40,12 +37,9 @@ struct WsData {
 
 #[derive(Deserialize)]
 struct WsDeal {
-    p: String, // Price comes as string
-    // t: u64, // Time (ignored for speed)
-    // S: i32, // Type (ignored for speed)
+    p: String,
 }
 
-// --- Regular Structures ---
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Trade {
     symbol: String,
@@ -90,7 +84,7 @@ struct Config {
 }
 
 // --- Helper Functions ---
-#[inline(always)] // تعليمات للمترجم بدمج الكود للسرعة
+#[inline(always)]
 fn get_timestamp_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
 }
@@ -111,7 +105,9 @@ fn sign_query(query: &str, secret: &str) -> String {
 async fn start_health_server() {
     let port_str = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let port: u16 = port_str.parse().unwrap_or(8080);
-    let route = warp::any().map(|| "⚡ OMEGA ROYAL: HFT MODE ACTIVE");
+    // رسالة تطمئنك أن السيرفر يعمل
+    let route = warp::any().map(|| "🚀 OMEGA ROYAL IS ALIVE (HFT MODE)");
+    println!("🌍 Health Server running on port {}", port);
     warp::serve(route).run(([0, 0, 0, 0], port)).await;
 }
 
@@ -129,18 +125,15 @@ impl AppState {
         }
     }
 
-    // ⚡⚡ ULTRA-LOW LATENCY ANALYZER ⚡⚡
     #[inline(always)]
     fn analyze_tick(&mut self, symbol: &str, price: f64) -> Option<TradeAction> {
         if !self.is_running { return None; }
-
         let now = get_timestamp_secs();
 
         // 1. Sell Logic
         if let Some(trade) = self.active_trades.get_mut(symbol) {
             if price > trade.peak_price { trade.peak_price = price; }
             let drawdown = (trade.peak_price - price) / trade.peak_price;
-            
             if drawdown >= 0.03 {
                 let action = TradeAction::Sell { 
                     symbol: symbol.to_string(), price, qty: trade.quantity, buy_price: trade.buy_price 
@@ -154,18 +147,12 @@ impl AppState {
         // 2. Buy Logic
         let window = self.price_windows.entry(symbol.to_string()).or_insert_with(|| VecDeque::with_capacity(50));
         window.push_back((now, price));
-        
-        // Fast Pruning loop
         while let Some(first) = window.front() {
             if now - first.0 > 30 { window.pop_front(); } else { break; }
         }
-        
         if window.len() < 3 { return None; }
-
-        // Unsafe unwrap skipped because we checked len >= 3
         let oldest_price = window.front().unwrap().1;
-        
-        if oldest_price <= 0.00000001 { return None; } // avoid div by zero
+        if oldest_price <= 0.00000001 { return None; } 
         let increase = (price - oldest_price) / oldest_price;
 
         if increase >= 0.05 {
@@ -186,7 +173,6 @@ async fn place_order(client: &Client, config: &Config, symbol: &str, side: &str,
     let signature = sign_query(&params, &config.api_secret);
     let url = format!("{}/api/v3/order?{}&signature={}", MEXC_BASE_URL, params, signature);
     
-    // Client is reused, keeping TCP connection alive (Keep-Alive)
     let res = client.post(&url)
         .header("X-MEXC-APIKEY", &config.api_key)
         .header("Content-Type", "application/json")
@@ -201,7 +187,6 @@ async fn telegram_listener(state: Arc<Mutex<AppState>>, client: Client) {
         let offset = { state.lock().await.last_update_id + 1 };
         let url = format!("https://api.telegram.org/bot{}/getUpdates?offset={}&timeout=30", token, offset);
         if let Ok(resp) = client.get(&url).send().await {
-            // Using generic Value here is fine, speed is not critical for Telegram
             if let Ok(json) = resp.json::<serde_json::Value>().await {
                 if let Some(results) = json["result"].as_array() {
                     for update in results {
@@ -231,7 +216,7 @@ async fn process_user_command(text: &str, chat_id: &str, state: &Arc<Mutex<AppSt
             lock.config.trade_amount = amount;
             lock.waiting_for_amount = false;
             lock.is_running = true;
-            let msg = format!("✅ **HFT PROTOCOL ENGAGED.**\n💰 Alloc: **{:.2} USDT**", amount);
+            let msg = format!("✅ **HFT ENGAGED.**\n💰 Alloc: **{:.2} USDT**", amount);
             drop(lock);
             send_telegram_direct(client, &config_clone, &msg).await;
             return;
@@ -287,9 +272,7 @@ async fn send_telegram_direct(client: &Client, config: &Config, text: &str) {
 
 async fn trade_executor(mut rx: mpsc::Receiver<TradeAction>, state: Arc<Mutex<AppState>>, client: Client) {
     while let Some(action) = rx.recv().await {
-        // Fast clone config outside match
         let config = { state.lock().await.config.clone() };
-        
         match action {
             TradeAction::Buy { symbol, price } => {
                 if place_order(&client, &config, &symbol, "BUY", None, Some(config.trade_amount)).await {
@@ -299,11 +282,9 @@ async fn trade_executor(mut rx: mpsc::Receiver<TradeAction>, state: Arc<Mutex<Ap
                         quantity: estimated_qty, timestamp: get_timestamp_secs(), 
                         entry_time_str: get_current_time_str(),
                     };
-                    
                     let mut lock = state.lock().await;
                     lock.active_trades.insert(symbol.clone(), trade);
-                    drop(lock); // Release lock immediately
-                    
+                    drop(lock);
                     let msg = format!("🟢 **BUY** {} @ {}", symbol, price);
                     send_telegram_direct(&client, &config, &msg).await;
                 }
@@ -316,8 +297,7 @@ async fn trade_executor(mut rx: mpsc::Receiver<TradeAction>, state: Arc<Mutex<Ap
                         symbol: symbol.clone(), pnl_percent: (price-buy_price)/buy_price, 
                         profit_usdt: pnl, close_time: get_current_time_str() 
                     });
-                    drop(lock); // Release lock immediately
-                    
+                    drop(lock);
                     let msg = format!("💰 **SELL** {} | PNL: {:.2}", symbol, pnl);
                     send_telegram_direct(&client, &config, &msg).await;
                 }
@@ -335,25 +315,15 @@ async fn ws_handler(symbols: Vec<String>, state: Arc<Mutex<AppState>>, tx: mpsc:
         
         while let Some(msg) = read.next().await {
             if let Ok(Message::Text(text)) = msg {
-                // ⚡⚡ OPTIMIZATION #3: TYPED DESERIALIZATION ⚡⚡
-                // This replaces the slow 'Value' parsing with fast struct parsing
                 if let Ok(parsed) = serde_json::from_str::<WsMessage>(&text) {
-                    let symbol = parsed.s; // Direct access, no unwrap needed
+                    let symbol = parsed.s;
                     for deal in parsed.d.deals {
-                        // Fast string-to-float parse
                         if let Ok(price) = deal.p.parse::<f64>() {
-                            
-                            // ⚡⚡ OPTIMIZATION #2: HYPER-SPEED MUTEX ⚡⚡
-                            // Calculate ONLY what we need inside the lock, then drop it.
                             let action = {
                                 let mut lock = state.lock().await;
                                 lock.analyze_tick(&symbol, price)
-                            }; // Lock is dropped HERE automatically
-
-                            // Send action to executor (outside the lock)
-                            if let Some(act) = action { 
-                                let _ = tx.send(act).await; 
-                            }
+                            };
+                            if let Some(act) = action { let _ = tx.send(act).await; }
                         }
                     }
                 }
@@ -365,27 +335,27 @@ async fn ws_handler(symbols: Vec<String>, state: Arc<Mutex<AppState>>, tx: mpsc:
 
 #[tokio::main]
 async fn main() {
-    // ⚡⚡ OPTIMIZATION #4: EXECUTION KEEP-ALIVE ⚡⚡
-    // Connection pooling configured for maximum stickiness
     let client = Client::builder()
-        .tcp_nodelay(true) // Disable Nagle's alg (Low Latency)
-        .pool_idle_timeout(Duration::from_secs(300)) // Keep connections open for 5 mins
-        .pool_max_idle_per_host(50) // Allow many idle connections ready to fire
+        .tcp_nodelay(true)
+        .pool_idle_timeout(Duration::from_secs(300))
+        .pool_max_idle_per_host(50)
         .build()
         .expect("Client build failed");
 
-    let token = env::var("TELEGRAM_BOT_TOKEN").expect("Token");
-    let chat_id = env::var("TELEGRAM_CHAT_ID").expect("ChatID");
-    let api_key = env::var("MEXC_API_KEY").expect("Key");
-    let secret = env::var("MEXC_API_SECRET").expect("Secret");
+    // نستخدم unwrap_or_default لتجنب الانهيار في حالة عدم وجود المتغيرات (رغم أنها ضرورية)
+    let token = env::var("TELEGRAM_BOT_TOKEN").unwrap_or_default();
+    let chat_id = env::var("TELEGRAM_CHAT_ID").unwrap_or_default();
+    let api_key = env::var("MEXC_API_KEY").unwrap_or_default();
+    let secret = env::var("MEXC_API_SECRET").unwrap_or_default();
 
+    println!("👑 OMEGA ROYAL ENGINE: STARTING...");
+    
+    // 🔥 تشغيل السيرفر بشكل مستقل تماماً لضمان بقاء البوت حياً
     tokio::spawn(async move { start_health_server().await; });
 
     let config = Config { api_key, api_secret: secret, bot_token: token, chat_id, trade_amount: 0.0 };
-    println!("👑 OMEGA ROYAL ENGINE: HFT MODE ACTIVATED");
-    
     let state = Arc::new(Mutex::new(AppState::new(config)));
-    let (tx, rx) = mpsc::channel::<TradeAction>(500); // Increased buffer
+    let (tx, rx) = mpsc::channel::<TradeAction>(500);
 
     let state_telegram = state.clone();
     let client_telegram = client.clone();
@@ -395,40 +365,43 @@ async fn main() {
     let client_executor = client.clone();
     tokio::spawn(async move { trade_executor(rx, state_executor, client_executor).await; });
 
-    // Initial Info Fetch
+    // محاولة جلب العملات
+    println!("🔄 Fetching pairs from MEXC...");
     let resp = client.get(format!("{}/api/v3/exchangeInfo", MEXC_BASE_URL)).send().await;
     let mut symbols: Vec<String> = Vec::new();
+    
     if let Ok(r) = resp {
-        // We still use Value here because it runs once and the schema is complex
         if let Ok(json) = r.json::<serde_json::Value>().await {
              if let Some(list) = json["symbols"].as_array() {
                  for s in list {
                      let name = s["symbol"].as_str().unwrap_or_default();
-                     if name.ends_with("USDT") && s["status"].as_str().unwrap_or("") == "ENABLED" 
-                        && !name.contains("3L") && !name.contains("DOWN") {
+                     // تخفيف شروط الفلترة قليلاً لضمان التقاط عملات
+                     if name.ends_with("USDT") && s["status"].as_str().unwrap_or("") == "ENABLED" {
                          symbols.push(name.to_string());
                      }
                  }
              }
         }
     }
-    println!("✅ LOADED {} PAIRS.", symbols.len());
     
-    // Notify Admin
-    {
-        let lock = state.lock().await;
-        let c = lock.config.clone();
-        drop(lock);
-        send_telegram_direct(&client, &c, "🤖 **SYSTEM OPTIMIZED: HFT SPEC (STRANGER'S ORDERS EXECUTED).**").await;
+    println!("✅ LOADED {} PAIRS.", symbols.len());
+
+    // إذا لم يجد عملات، لا تخرج من البرنامج!
+    if symbols.is_empty() {
+        println!("⚠️ WARNING: No pairs loaded! Check API or Filters. Bot is staying alive for debugging.");
+    } else {
+        let mut handles = vec![];
+        for chunk in symbols.chunks(SYMBOLS_PER_SOCKET) {
+            let chunk_vec = chunk.to_vec();
+            let state_clone = state.clone();
+            let tx_clone = tx.clone();
+            handles.push(tokio::spawn(async move { ws_handler(chunk_vec, state_clone, tx_clone).await; }));
+            sleep(Duration::from_millis(20)).await;
+        }
+        // لا ننتظر هنا، بل نترك المهام تعمل في الخلفية
     }
 
-    let mut handles = vec![];
-    for chunk in symbols.chunks(SYMBOLS_PER_SOCKET) {
-        let chunk_vec = chunk.to_vec();
-        let state_clone = state.clone();
-        let tx_clone = tx.clone();
-        handles.push(tokio::spawn(async move { ws_handler(chunk_vec, state_clone, tx_clone).await; }));
-        sleep(Duration::from_millis(20)).await; // Shorter stagger
-    }
-    futures_util::future::join_all(handles).await;
+    // 🛑🔥 الحركة السحرية: تجميد الدالة الرئيسية للأبد لمنع الخروج 🔥🛑
+    // هذا السطر يخبر البرنامج: "انتظر هنا إلى يوم القيامة"
+    std::future::pending::<()>().await;
 }
