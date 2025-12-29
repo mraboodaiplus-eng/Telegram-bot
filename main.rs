@@ -14,14 +14,15 @@ use sha2::Sha256;
 use chrono::{DateTime, Utc};
 use warp::Filter;
 
-// 🚀 تفعيل الذاكرة السريعة
+// 🚀 JEMALLOC: السرعة القصوى
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 // --- Config Constants ---
 const MEXC_BASE_URL: &str = "https://api.mexc.com";
 const MEXC_WS_URL: &str = "wss://wbs.mexc.com/ws";
-const SYMBOLS_PER_SOCKET: usize = 30;
+// زدنا العدد قليلاً ولكن بحذر
+const SYMBOLS_PER_SOCKET: usize = 60; 
 
 // --- Structures ---
 #[derive(Deserialize)]
@@ -72,6 +73,7 @@ struct AppState {
     is_running: bool,
     waiting_for_amount: bool,
     last_update_id: u64,
+    last_heartbeat: u64,
 }
 
 #[derive(Clone)]
@@ -105,8 +107,8 @@ fn sign_query(query: &str, secret: &str) -> String {
 async fn start_health_server() {
     let port_str = env::var("PORT").unwrap_or_else(|_| "8080".to_string());
     let port: u16 = port_str.parse().unwrap_or(8080);
-    let route = warp::any().map(|| "⚡ OMEGA ROYAL ONLINE (SECURE MODE)");
-    println!("🌍 Health Server listening on {}", port);
+    let route = warp::any().map(|| "🚀 OMEGA ROYAL: AGGRESSIVE MODE");
+    println!("🌍 Health Server listening on port {}", port);
     warp::serve(route).run(([0, 0, 0, 0], port)).await;
 }
 
@@ -121,6 +123,7 @@ impl AppState {
             is_running: false,
             waiting_for_amount: false,
             last_update_id: 0,
+            last_heartbeat: 0,
         }
     }
 
@@ -128,6 +131,12 @@ impl AppState {
     fn analyze_tick(&mut self, symbol: &str, price: f64) -> Option<TradeAction> {
         if !self.is_running { return None; }
         let now = get_timestamp_secs();
+
+        // نبض النظام كل 60 ثانية
+        if now - self.last_heartbeat > 60 {
+            println!("💓 ALIVE: Checking markets... (Last tick: {} @ {})", symbol, price);
+            self.last_heartbeat = now;
+        }
 
         // 1. Sell Logic
         if let Some(trade) = self.active_trades.get_mut(symbol) {
@@ -143,18 +152,37 @@ impl AppState {
             return None;
         }
 
-        // 2. Buy Logic
-        let window = self.price_windows.entry(symbol.to_string()).or_insert_with(|| VecDeque::with_capacity(50));
+        // 2. Buy Logic (التعديل الجذري هنا)
+        let window = self.price_windows.entry(symbol.to_string()).or_insert_with(|| VecDeque::with_capacity(100));
         window.push_back((now, price));
+        
+        // ⚡ تمديد النافذة إلى 60 ثانية لضمان عدم ضياع الفرص البطيئة
         while let Some(first) = window.front() {
-            if now - first.0 > 30 { window.pop_front(); } else { break; }
+            if now - first.0 > 60 { window.pop_front(); } else { break; }
         }
-        if window.len() < 3 { return None; }
-        let oldest_price = window.front().unwrap().1;
-        if oldest_price <= 0.00000001 { return None; } 
-        let increase = (price - oldest_price) / oldest_price;
+        
+        if window.len() < 5 { return None; }
 
-        if increase >= 0.05 {
+        // 🔥 التغيير الكبير: البحث عن أدنى سعر في النافذة، وليس الأقدم فقط
+        // هذا يضمن التقاط الانفجار حتى لو بدأ من منتصف النافذة
+        let mut min_price = f64::MAX;
+        for &(_, p) in window.iter() {
+            if p < min_price { min_price = p; }
+        }
+
+        if min_price <= 0.00000001 { return None; } 
+        
+        // الحساب بناءً على القاع
+        let increase = (price - min_price) / min_price;
+
+        // 🚨 سجل الفضح: أي عملة تتجاوز 2% ستظهر في السجل
+        if increase >= 0.02 {
+             println!("🔥 HOT: {} is up {:.2}% (Low: {}, Current: {})", symbol, increase * 100.0, min_price, price);
+        }
+
+        // ⚡ الشراء عند 4.5% لضمان التنفيذ
+        if increase >= 0.045 {
+            println!("🚀 PUMP DETECTED: {} hit {:.2}%! EXECUTING BUY NOW!", symbol, increase * 100.0);
             self.price_windows.remove(symbol);
             return Some(TradeAction::Buy { symbol: symbol.to_string(), price });
         }
@@ -172,12 +200,25 @@ async fn place_order(client: &Client, config: &Config, symbol: &str, side: &str,
     let signature = sign_query(&params, &config.api_secret);
     let url = format!("{}/api/v3/order?{}&signature={}", MEXC_BASE_URL, params, signature);
     
+    println!("⚡ SENDING ORDER: {} {}", side, symbol);
+
     let res = client.post(&url)
         .header("X-MEXC-APIKEY", &config.api_key)
         .header("Content-Type", "application/json")
         .send().await;
 
-    match res { Ok(r) => r.status().is_success(), Err(_) => false }
+    match res { 
+        Ok(r) => {
+            let status = r.status();
+            let text = r.text().await.unwrap_or_default();
+            println!("📡 ORDER RESPONSE {}: {}", status, text); 
+            status.is_success()
+        }, 
+        Err(e) => {
+            println!("💥 NETWORK ERROR: {}", e);
+            false 
+        }
+    }
 }
 
 async fn telegram_listener(state: Arc<Mutex<AppState>>, client: Client) {
@@ -201,7 +242,7 @@ async fn telegram_listener(state: Arc<Mutex<AppState>>, client: Client) {
                 }
             }
         }
-        sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(500)).await;
     }
 }
 
@@ -215,7 +256,7 @@ async fn process_user_command(text: &str, chat_id: &str, state: &Arc<Mutex<AppSt
             lock.config.trade_amount = amount;
             lock.waiting_for_amount = false;
             lock.is_running = true;
-            let msg = format!("✅ **PROTOCOL STARTED.**\n💰 Allocation: **{:.2} USDT**\n🛡️ Mode: **SAFE & SECURE**", amount);
+            let msg = format!("✅ **PROTOCOL ENGAGED.**\n💰 Alloc: **{:.2} USDT**\n🔥 Trigger: **4.5% / 60s** (Min-Max Logic)", amount);
             drop(lock);
             send_telegram_direct(client, &config_clone, &msg).await;
             return;
@@ -228,23 +269,23 @@ async fn process_user_command(text: &str, chat_id: &str, state: &Arc<Mutex<AppSt
 
     match text {
         "/start" => {
-            let msg = "👑 **OMEGA ROYAL**\n\n🟢 `/run` - Start\n🔴 `/stop` - Stop\n📊 `/status` - Status\n📑 `/report` - Report";
+            let msg = "👑 **OMEGA ROYAL: AGGRESSIVE**\n\n🟢 `/run`\n🔴 `/stop`\n📊 `/status`\n📑 `/report`";
             drop(lock);
             send_telegram_direct(client, &config_clone, msg).await;
         },
         "/run" => {
             lock.waiting_for_amount = true;
             drop(lock);
-            send_telegram_direct(client, &config_clone, "💳 Enter Trade Amount (USDT):").await;
+            send_telegram_direct(client, &config_clone, "💳 Amount (USDT):").await;
         },
         "/stop" => {
             lock.is_running = false;
             drop(lock);
-            send_telegram_direct(client, &config_clone, "🛑 Engine Stopped.").await;
+            send_telegram_direct(client, &config_clone, "🛑 Halted.").await;
         },
         "/status" => {
             let count = lock.active_trades.len();
-            let mut report = format!("📊 **STATUS**\nState: {}\nActive Trades: {}\n", 
+            let mut report = format!("📊 **STATUS**\nState: {}\nActive: {}\n", 
                 if lock.is_running { "ON" } else { "OFF" }, count);
             for t in lock.active_trades.values() {
                 report.push_str(&format!("▫️ {} | {:.4}\n", t.symbol, t.buy_price));
@@ -307,7 +348,7 @@ async fn trade_executor(mut rx: mpsc::Receiver<TradeAction>, state: Arc<Mutex<Ap
 
 async fn ws_handler(symbols: Vec<String>, state: Arc<Mutex<AppState>>, tx: mpsc::Sender<TradeAction>) {
     loop {
-        let (ws_stream, _) = match connect_async(MEXC_WS_URL).await { Ok(s) => s, Err(_) => { sleep(Duration::from_secs(2)).await; continue; } };
+        let (ws_stream, _) = match connect_async(MEXC_WS_URL).await { Ok(s) => s, Err(_) => { sleep(Duration::from_secs(5)).await; continue; } };
         let (mut write, mut read) = ws_stream.split();
         let params = json!({ "method": "SUBSCRIPTION", "params": symbols.iter().map(|s| format!("spot@public.deals.v3.api@{}", s)).collect::<Vec<_>>() });
         if write.send(Message::Text(params.to_string())).await.is_err() { continue; }
@@ -328,7 +369,7 @@ async fn ws_handler(symbols: Vec<String>, state: Arc<Mutex<AppState>>, tx: mpsc:
                 }
             }
         }
-        sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(2)).await;
     }
 }
 
@@ -346,9 +387,8 @@ async fn main() {
     let api_key = env::var("MEXC_API_KEY").unwrap_or_default();
     let secret = env::var("MEXC_API_SECRET").unwrap_or_default();
 
-    println!("👑 OMEGA ROYAL ENGINE: INITIALIZING...");
+    println!("👑 OMEGA ROYAL ENGINE: AGGRESSIVE MIN-MAX LOGIC...");
     
-    // تشغيل السيرفر
     tokio::spawn(async move { start_health_server().await; });
 
     let config = Config { api_key, api_secret: secret, bot_token: token, chat_id, trade_amount: 0.0 };
@@ -374,17 +414,11 @@ async fn main() {
                      let name = s["symbol"].as_str().unwrap_or_default();
                      let status = s["status"].as_str().unwrap_or("0");
                      let is_spot = s["isSpotTradingAllowed"].as_bool().unwrap_or(false);
-                     
-                     // التحقق من الصلاحيات (هل هي SPOT فعلاً؟)
                      let has_spot_permission = s["permissions"].as_array()
                          .map(|p| p.iter().any(|x| x.as_str() == Some("SPOT")))
                          .unwrap_or(false);
 
-                     // 🛡️ الفلترة الصارمة والآمنة 🛡️
-                     // 1. USDT
-                     // 2. حالة نشطة (ENABLED أو 1)
-                     // 3. التداول مسموح (isSpotTradingAllowed = true)
-                     // 4. يملك صلاحية SPOT
+                     // فلترة ذكية
                      if name.ends_with("USDT") 
                         && (status == "1" || status == "ENABLED")
                         && is_spot
@@ -406,12 +440,11 @@ async fn main() {
             let state_clone = state.clone();
             let tx_clone = tx.clone();
             handles.push(tokio::spawn(async move { ws_handler(chunk_vec, state_clone, tx_clone).await; }));
-            sleep(Duration::from_millis(20)).await;
+            sleep(Duration::from_millis(50)).await;
         }
     } else {
-        println!("⚠️ NO PAIRS LOADED (Check API). Bot staying alive.");
+        println!("⚠️ NO PAIRS LOADED.");
     }
 
-    // الحركة السحرية: البقاء حياً للأبد
     std::future::pending::<()>().await;
 }
