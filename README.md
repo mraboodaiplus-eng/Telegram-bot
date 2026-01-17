@@ -1,20 +1,23 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Nebula - Security Validation Platform (Render Optimized)
 
-# Run and deploy your AI Studio app
+This project is a full-stack application that automates interactions with Google AI Studio using Puppeteer.
 
-This contains everything you need to run your app locally.
+## Deployment on Render
 
-View your app in AI Studio: https://ai.studio/apps/drive/1MEniQQMNgppwl4ZQiF0Vn0lJXuaQeVfO
+1.  **Create a New Web Service** on Render.
+2.  **Connect this Repository**.
+3.  **Select Runtime:** Docker.
+4.  **Environment Variables:**
+    *   `GOOGLE_EMAIL`: `dangerforyouaccouents@gmail.con`
+    *   `GOOGLE_PASSWORD`: `12345098765qwertpoiuyt`
+    *   `AI_STUDIO_URL`: `https://aistudio.google.com/u/3/prompts/19-FE9TkNS7CpJAmLStYEYOc7SdqlVPhC`
+    *   `GEMINI_API_KEY`: Your Gemini API Key.
+    *   `PORT`: 3000 (Render will handle this automatically).
 
-## Run Locally
+## Features
+- Automated Google Authentication.
+- Dynamic response polling for faster interactions.
+- React-based terminal interface.
 
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Security Note
+Ensure that the Google account used does not have 2FA enabled for the automation to work seamlessly.
