@@ -8,7 +8,7 @@ This project is a full-stack application that automates interactions with Google
 2.  **Connect this Repository**.
 3.  **Select Runtime:** Docker.
 4.  **Environment Variables:**
-    *   `GOOGLE_EMAIL`: `dangerforyouaccouents@gmail.con`
+    *   `GOOGLE_EMAIL`: `dangerforyouaccouents@gmail.com`
     *   `GOOGLE_PASSWORD`: `12345098765qwertpoiuyt`
     *   `AI_STUDIO_URL`: `https://aistudio.google.com/u/3/prompts/19-FE9TkNS7CpJAmLStYEYOc7SdqlVPhC`
     *   `GEMINI_API_KEY`: Your Gemini API Key.
