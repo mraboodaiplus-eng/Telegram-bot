@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <title>NEBULA | RED TEAM OPS</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              mono: ['JetBrains Mono', 'monospace'],
+              display: ['Rajdhani', 'sans-serif'],
+              cyber: ['Orbitron', 'sans-serif'],
+            },
+            colors: {
+              nebula: {
+                bg: '#000000',       
+                glass: 'rgba(10, 10, 10, 0.6)',
+                border: 'rgba(255, 0, 0, 0.2)', 
+                crimson: 'var(--primary-color)', 
+                neon: 'var(--secondary-color)',    
+                dim: '#555555',
+              }
+            },
+            animation: {
+              'spin-slow': 'spin 20s linear infinite',
+              'spin-reverse-slow': 'spin 25s linear infinite reverse',
+              'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'glitch': 'glitch 1s linear infinite',
+              'scanline': 'scanline 8s linear infinite',
+              'float': 'float 6s ease-in-out infinite',
+            },
+            keyframes: {
+              glitch: {
+                '2%, 64%': { transform: 'translate(2px,0) skew(0deg)' },
+                '4%, 60%': { transform: 'translate(-2px,0) skew(0deg)' },
+                '62%': { transform: 'translate(0,0) skew(5deg)' },
+              },
+              scanline: {
+                '0%': { transform: 'translateY(-100%)' },
+                '100%': { transform: 'translateY(100%)' }
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-20px)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      :root { 
+        --primary-color: #ff003c;
+        --secondary-color: #00f3ff;
+      }
+      body {
+        background-color: #000;
+        color: #fff;
+        overflow: hidden;
+        font-family: 'Rajdhani', sans-serif;
+      }
+
+      /* --- 3D ENVIRONMENT --- */
+      .perspective-container {
+        perspective: 1000px;
+        overflow: hidden;
+      }
+
+      /* --- MOVING GRID FLOOR --- */
+      .cyber-grid {
+        position: absolute;
+        width: 300%;
+        height: 300%;
+        bottom: -100%;
+        left: -100%;
+        background-image: 
+          linear-gradient(rgba(var(--primary-rgb), 0.2) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(var(--primary-rgb), 0.2) 1px, transparent 1px);
+        background-size: 50px 50px;
+        transform: rotateX(70deg);
+        animation: gridMove 10s linear infinite;
+        mask-image: radial-gradient(circle at center, black 0%, transparent 60%);
+        pointer-events: none;
+      }
+      @keyframes gridMove {
+        0% { transform: rotateX(70deg) translateY(0); }
+        100% { transform: rotateX(70deg) translateY(50px); }
+      }
+
+      /* --- HOLOGRAPHIC PANELS --- */
+      .holo-panel {
+        background: rgba(5, 5, 5, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(8px);
+        position: relative;
+        clip-path: polygon(
+          20px 0, 100% 0, 
+          100% calc(100% - 20px), calc(100% - 20px) 100%, 
+          0 100%, 0 20px
+        );
+      }
+      .holo-panel::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; height: 1px;
+        background: linear-gradient(90deg, transparent, var(--primary-color), transparent);
+        opacity: 0.8;
+      }
+      .holo-panel::after {
+        content: '';
+        position: absolute;
+        bottom: 0; right: 0; width: 20px; height: 20px;
+        border-bottom: 2px solid var(--primary-color);
+        border-right: 2px solid var(--primary-color);
+      }
+
+      /* --- CRT & SCANLINES --- */
+      .scanlines {
+        background: linear-gradient(
+          to bottom,
+          rgba(255,255,255,0),
+          rgba(255,255,255,0) 50%,
+          rgba(0,0,0,0.3) 50%,
+          rgba(0,0,0,0.3)
+        );
+        background-size: 100% 4px;
+        position: fixed; pointer-events: none; inset: 0; z-index: 40; opacity: 0.3;
+      }
+      .vignette {
+        position: fixed; inset: 0; pointer-events: none; z-index: 41;
+        background: radial-gradient(circle, transparent 60%, black 100%);
+      }
+
+      /* --- SCROLLBARS --- */
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: #050505; }
+      ::-webkit-scrollbar-thumb { background: #333; border: 1px solid var(--primary-color); }
+      ::-webkit-scrollbar-thumb:hover { background: var(--primary-color); }
+      
+      /* --- MARKDOWN --- */
+      .markdown-body { font-family: 'JetBrains Mono', monospace; color: #ccc; }
+      .markdown-body h1, .markdown-body h2 { color: var(--primary-color); border-bottom: 1px dashed var(--primary-color); margin-top: 1rem; }
+      .markdown-body code { color: var(--secondary-color); background: rgba(255, 255, 255, 0.05); padding: 2px 4px; }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "react-markdown": "https://esm.sh/react-markdown@9.0.1?bundle",
+    "remark-gfm": "https://esm.sh/remark-gfm@4.0.0?bundle",
+    "react-syntax-highlighter": "https://esm.sh/react-syntax-highlighter@15.5.0?bundle",
+    "react-syntax-highlighter/dist/esm/styles/prism": "https://esm.sh/react-syntax-highlighter@15.5.0/dist/esm/styles/prism?bundle",
+    "react-syntax-highlighter/": "https://esm.sh/react-syntax-highlighter@^16.1.0/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

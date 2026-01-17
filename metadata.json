@@ -1,0 +1,5 @@
+{
+  "name": "NEBULA - Security Validation Platform",
+  "description": "An enterprise-grade DevSecOps platform for automated security validation and script generation using Gemini 3 Pro.",
+  "requestFramePermissions": []
+}
