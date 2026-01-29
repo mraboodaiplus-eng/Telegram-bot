@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: telegram-4k-upscaler-bot
+    env: python
+    region: frankfurt  # أو أي منطقة قريبة
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: UPSCALE_API_ENDPOINT
+        value: https://clipdrop-api.co/image-upscaling/v1/upscale
